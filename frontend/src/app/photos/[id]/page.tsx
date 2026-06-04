@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LoadingState } from "@/components/ui/loading-state";
 import { Textarea } from "@/components/ui/textarea";
 import { PersonCombobox } from "@/components/person-combobox";
 import { fmtDate } from "@/lib/utils";
@@ -35,6 +36,7 @@ export default function PhotoDetail() {
   const pid = Number(id);
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [events, setEvents] = useState<EventItem[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [memo, setMemo] = useState("");
@@ -63,7 +65,12 @@ export default function PhotoDetail() {
 
   useEffect(() => {
     load();
-    api.listEvents().then(setEvents).catch(() => {});
+    setEventsLoading(true);
+    api
+      .listEvents()
+      .then(setEvents)
+      .catch(() => setEvents([]))
+      .finally(() => setEventsLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pid]);
 
@@ -71,8 +78,11 @@ export default function PhotoDetail() {
     if (photo) resetForm(photo);
   }, [photo]);
 
-  const eventName = (id: number | null) =>
-    id == null ? "-" : events.find((event) => event.id === id)?.name ?? `#${id}`;
+  const eventName = (id: number | null) => {
+    if (id == null) return "-";
+    if (eventsLoading) return "読み込み中...";
+    return events.find((event) => event.id === id)?.name ?? `#${id}`;
+  };
 
   const confirm = async (linkId: number, personId: number) => {
     try {
@@ -137,7 +147,7 @@ export default function PhotoDetail() {
   };
 
   if (err) return <p className="text-destructive">{err}</p>;
-  if (!photo) return <p className="text-muted-foreground">読み込み中...</p>;
+  if (!photo) return <LoadingState label="写真を読み込み中..." />;
 
   return (
     <div className="space-y-6">
@@ -193,8 +203,9 @@ export default function PhotoDetail() {
                       className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                       value={eventId}
                       onChange={(e) => setEventId(e.target.value)}
+                      disabled={eventsLoading}
                     >
-                      <option value="">未設定</option>
+                      <option value="">{eventsLoading ? "イベントを読み込み中..." : "未設定"}</option>
                       {events.map((event) => (
                         <option key={event.id} value={event.id}>
                           {event.name}
@@ -265,4 +276,3 @@ export default function PhotoDetail() {
     </div>
   );
 }
-

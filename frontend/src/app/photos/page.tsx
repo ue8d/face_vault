@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { LoadingState } from "@/components/ui/loading-state";
 import { fmtDate } from "@/lib/utils";
 
 const parseUrlInput = (value: string) =>
@@ -21,13 +22,31 @@ const parseUrlInput = (value: string) =>
 export default function PhotosPage() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const load = () => api.listPhotos({ limit: 500 }).then(setPhotos).catch((e) => setErr(e.message));
+  const load = async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      setPhotos(await api.listPhotos({ limit: 500 }));
+    } catch (e) {
+      setErr((e as Error).message);
+      setPhotos([]);
+    } finally {
+      setLoading(false);
+    }
+  };
   useEffect(() => {
     load();
-    api.listEvents().then(setEvents).catch(() => {});
+    setEventsLoading(true);
+    api
+      .listEvents()
+      .then(setEvents)
+      .catch(() => setEvents([]))
+      .finally(() => setEventsLoading(false));
   }, []);
 
   return (
@@ -42,7 +61,11 @@ export default function PhotosPage() {
 
       {err && <p className="text-sm text-destructive">{err}</p>}
 
-      {photos.length === 0 ? (
+      {loading && photos.length > 0 && <LoadingState compact label="写真を更新中..." />}
+
+      {loading && photos.length === 0 ? (
+        <LoadingState label="写真を読み込み中..." />
+      ) : photos.length === 0 ? (
         <p className="text-muted-foreground">写真なし。アップロードから追加。</p>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
@@ -72,6 +95,7 @@ export default function PhotosPage() {
         open={open}
         onClose={() => setOpen(false)}
         events={events}
+        eventsLoading={eventsLoading}
         onImported={load}
       />
     </div>
@@ -82,11 +106,13 @@ function UploadDialog({
   open,
   onClose,
   events,
+  eventsLoading,
   onImported,
 }: {
   open: boolean;
   onClose: () => void;
   events: EventItem[];
+  eventsLoading: boolean;
   onImported: () => void;
 }) {
   const [mode, setMode] = useState<"files" | "url">("files");
@@ -231,8 +257,9 @@ function UploadDialog({
             className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
             value={eventId}
             onChange={(e) => setEventId(e.target.value)}
+            disabled={eventsLoading}
           >
-            <option value="">（なし）</option>
+            <option value="">{eventsLoading ? "イベントを読み込み中..." : "（なし）"}</option>
             {events.map((ev) => (
               <option key={ev.id} value={ev.id}>
                 {ev.name}

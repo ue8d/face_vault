@@ -7,6 +7,7 @@ import type { MergeSuggestion, ReviewItem } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LoadingState } from "@/components/ui/loading-state";
 import { PersonCombobox } from "@/components/person-combobox";
 
 function SuggestionFace({
@@ -41,12 +42,25 @@ function SuggestionFace({
 export default function ReviewPage() {
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [suggestions, setSuggestions] = useState<MergeSuggestion[]>([]);
+  const [loadingItems, setLoadingItems] = useState(true);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(true);
+  const itemCountLabel = loadingItems && items.length === 0 ? "..." : String(items.length);
+  const suggestionCountLabel =
+    loadingSuggestions && suggestions.length === 0 ? "..." : String(suggestions.length);
 
   const load = () => {
-    api.reviewFaces(40).then(setItems).catch(() => {});
-    api.mergeSuggestions().then(setSuggestions).catch(() => {});
+    setLoadingItems(true);
+    setLoadingSuggestions(true);
+    api.reviewFaces(40).then(setItems).catch(() => {}).finally(() => setLoadingItems(false));
+    api
+      .mergeSuggestions()
+      .then(setSuggestions)
+      .catch(() => {})
+      .finally(() => setLoadingSuggestions(false));
   };
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   const assign = async (item: ReviewItem, personId: number) => {
     try {
@@ -78,7 +92,8 @@ export default function ReviewPage() {
     setSuggestions((xs) =>
       xs.filter((x) => !(x.person_a_id === s.person_a_id && x.person_b_id === s.person_b_id)),
     );
-    api.reviewFaces(40).then(setItems).catch(() => {});
+    setLoadingItems(true);
+    api.reviewFaces(40).then(setItems).catch(() => {}).finally(() => setLoadingItems(false));
   };
 
   const dismiss = async (s: MergeSuggestion) => {
@@ -95,12 +110,14 @@ export default function ReviewPage() {
       {/* 顔の確認キュー */}
       <section className="space-y-3">
         <h2 className="flex items-center gap-2 text-lg font-semibold">
-          <UserCheck className="h-5 w-5" /> 顔の確認 ({items.length})
+          <UserCheck className="h-5 w-5" /> 顔の確認 ({itemCountLabel})
         </h2>
         <p className="text-sm text-muted-foreground">
           未照合・低信頼の顔。確定するほど本人のベクトルが増え精度が上がる。
         </p>
-        {items.length === 0 ? (
+        {loadingItems && items.length === 0 ? (
+          <LoadingState label="確認待ちの顔を読み込み中..." />
+        ) : items.length === 0 ? (
           <p className="text-muted-foreground">確認待ちなし。</p>
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -171,12 +188,14 @@ export default function ReviewPage() {
       {/* 統合候補 */}
       <section className="space-y-3">
         <h2 className="flex items-center gap-2 text-lg font-semibold">
-          <GitMerge className="h-5 w-5" /> 統合候補 ({suggestions.length})
+          <GitMerge className="h-5 w-5" /> 統合候補 ({suggestionCountLabel})
         </h2>
         <p className="text-sm text-muted-foreground">
           顔ベクトルが近い別人物。同一人物なら統合（後者を前者に吸収）。
         </p>
-        {suggestions.length === 0 ? (
+        {loadingSuggestions && suggestions.length === 0 ? (
+          <LoadingState label="統合候補を読み込み中..." />
+        ) : suggestions.length === 0 ? (
           <p className="text-muted-foreground">候補なし。</p>
         ) : (
           <div className="space-y-2">

@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { LoadingState } from "@/components/ui/loading-state";
 import { PersonFormDialog } from "@/components/person-form";
 import { PersonCombobox } from "@/components/person-combobox";
 import { fmtDate } from "@/lib/utils";
@@ -19,14 +20,21 @@ export default function PersonDetail() {
   const router = useRouter();
   const [person, setPerson] = useState<Person | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
+  const [photosLoading, setPhotosLoading] = useState(true);
   const [answer, setAnswer] = useState<string | null>(null);
   const [loadingAns, setLoadingAns] = useState(false);
   const [edit, setEdit] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const load = () => {
+    setErr(null);
     api.getPerson(pid).then(setPerson).catch((e) => setErr(e.message));
-    api.listPhotos({ person_id: pid }).then(setPhotos).catch(() => {});
+    setPhotosLoading(true);
+    api
+      .listPhotos({ person_id: pid })
+      .then(setPhotos)
+      .catch(() => setPhotos([]))
+      .finally(() => setPhotosLoading(false));
   };
 
   const doMergeWith = async (sourceId: number) => {
@@ -81,7 +89,7 @@ export default function PersonDetail() {
   };
 
   if (err) return <p className="text-destructive">{err}</p>;
-  if (!person) return <p className="text-muted-foreground">読み込み中…</p>;
+  if (!person) return <LoadingState label="人物を読み込み中..." />;
 
   return (
     <div className="space-y-6">
@@ -182,8 +190,13 @@ export default function PersonDetail() {
       </Card>
 
       <div>
-        <h2 className="mb-3 text-lg font-semibold">写真 ({photos.length})</h2>
-        {photos.length === 0 ? (
+        <h2 className="mb-3 text-lg font-semibold">
+          写真 ({photosLoading && photos.length === 0 ? "..." : photos.length})
+        </h2>
+        {photosLoading && photos.length > 0 && <LoadingState compact label="写真を更新中..." />}
+        {photosLoading && photos.length === 0 ? (
+          <LoadingState label="この人物の写真を読み込み中..." />
+        ) : photos.length === 0 ? (
           <p className="text-sm text-muted-foreground">この人物が写る写真はまだなし。</p>
         ) : (
           <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">

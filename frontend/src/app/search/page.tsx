@@ -8,11 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LoadingState } from "@/components/ui/loading-state";
 import { PersonCombobox } from "@/components/person-combobox";
 import { fmtDate } from "@/lib/utils";
 
 export default function SearchPage() {
   const [events, setEvents] = useState<EventItem[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
   const [personId, setPersonId] = useState("");
   const [personName, setPersonName] = useState("");
   const [eventId, setEventId] = useState("");
@@ -26,7 +28,12 @@ export default function SearchPage() {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    api.listEvents().then(setEvents).catch(() => {});
+    setEventsLoading(true);
+    api
+      .listEvents()
+      .then(setEvents)
+      .catch(() => setEvents([]))
+      .finally(() => setEventsLoading(false));
   }, []);
 
   const run = async () => {
@@ -87,6 +94,7 @@ export default function SearchPage() {
           label="イベント"
           value={eventId}
           onChange={setEventId}
+          disabled={eventsLoading}
           options={events.map((e) => [String(e.id), e.name])}
         />
         <div className="space-y-1.5">
@@ -127,25 +135,31 @@ export default function SearchPage() {
         {err && <p className="text-sm text-destructive">{err}</p>}
       </div>
 
-      {searched && (
+      {busy && <LoadingState label="写真を検索中..." />}
+
+      {!busy && searched && (
         <div>
           <p className="mb-3 text-sm text-muted-foreground">{results.length} 件</p>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {results.map((p) => (
-              <Link key={p.id} href={`/photos/${p.id}`}>
-                <div className="aspect-square overflow-hidden rounded-lg border bg-muted">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={photoRawUrl(p.id)}
-                    alt=""
-                    className="h-full w-full object-cover"
-                    onError={(e) => (e.currentTarget.style.display = "none")}
-                  />
-                </div>
-                <p className="mt-1 truncate text-xs text-muted-foreground">{fmtDate(p.taken_at)}</p>
-              </Link>
-            ))}
-          </div>
+          {results.length === 0 ? (
+            <p className="text-sm text-muted-foreground">条件に合う写真はありません。</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              {results.map((p) => (
+                <Link key={p.id} href={`/photos/${p.id}`}>
+                  <div className="aspect-square overflow-hidden rounded-lg border bg-muted">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photoRawUrl(p.id)}
+                      alt=""
+                      className="h-full w-full object-cover"
+                      onError={(e) => (e.currentTarget.style.display = "none")}
+                    />
+                  </div>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">{fmtDate(p.taken_at)}</p>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -156,11 +170,13 @@ function Sel({
   label,
   value,
   onChange,
+  disabled,
   options,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  disabled?: boolean;
   options: [string, string][];
 }) {
   return (
@@ -170,8 +186,9 @@ function Sel({
         className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
       >
-        <option value="">指定なし</option>
+        <option value="">{disabled ? "読み込み中..." : "指定なし"}</option>
         {options.map(([v, l]) => (
           <option key={v} value={v}>
             {l}
