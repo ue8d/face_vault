@@ -1,0 +1,72 @@
+# 個人向け写真記憶アシスタント。外部公開なし、Cloudflare Tunnel/Access 前提。
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    command: ["-p", "5449"]  # 既定5432 +17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-face_vault}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-face_vault}
+      POSTGRES_DB: ${POSTGRES_DB:-face_vault}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-face_vault} -p 5449"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      args:
+        # 顔認識(InsightFace/FAISS)を入れる場合 true。未指定は軽量起動（顔処理スキップ）
+        INSTALL_FACE: "${INSTALL_FACE:-true}"
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5449
+      POSTGRES_USER: ${POSTGRES_USER:-face_vault}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-face_vault}
+      POSTGRES_DB: ${POSTGRES_DB:-face_vault}
+      AI_PROVIDER: ${AI_PROVIDER:-anthropic}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    volumes:
+      - photodata:/data
+      - insightface:/root/.insightface  # 顔モデルを永続化（再DL回避）
+    ports:
+      - "127.0.0.1:8017:8017"  # Tunnel経由のみ。直接公開しない
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # ブラウザから見たbackend URL（クライアントバンドルに焼込）
+        NEXT_PUBLIC_API_BASE: "${NEXT_PUBLIC_API_BASE:-http://localhost:8017}"
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:3017:3017"
+
+  # Cloudflare Tunnel（任意）。`docker compose --profile tunnel up -d` で起動。
+  # ルーティング(ホスト名→service)とAccessはCloudflareダッシュボードで設定:
+  #   frontend → http://frontend:3017 / API → http://backend:8017
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - frontend
+      - backend
+
+volumes:
+  pgdata: {}
+  photodata: {}
+  insightface: {}

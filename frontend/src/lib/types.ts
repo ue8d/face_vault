@@ -1,0 +1,106 @@
+export interface Tag {
+  id: number;
+  name: string;
+}
+
+export interface Person {
+  id: number;
+  name: string;
+  nicknames: string[];
+  relation: string | null;
+  memo: string | null;
+  created_at: string;
+  tags: Tag[];
+}
+
+export interface PhotoPersonLink {
+  id: number;
+  person_id: number | null;
+  person_name: string | null;
+  confidence: number | null;
+  bbox: string | null;
+}
+
+export interface Photo {
+  id: number;
+  path: string;
+  taken_at: string | null;
+  memo: string | null;
+  event_id: number | null;
+  created_at: string;
+  person_links: PhotoPersonLink[];
+}
+
+export interface PhotoUpdate {
+  taken_at?: string | null;
+  memo?: string | null;
+  event_id?: number | null;
+}
+
+export interface EventItem {
+  id: number;
+  name: string;
+  memo: string | null;
+  created_at: string;
+}
+
+export interface IdentifyResponse {
+  person_id: number;
+  answer: string;
+}
+
+export interface SettingItem {
+  key: string;
+  label: string;
+  type: "str" | "int" | "float" | "secret" | "bool";
+  group: string;
+  value: string;
+  is_set: boolean;
+  source: string;
+}
+
+export interface PersonCreate {
+  name: string;
+  nicknames?: string[];
+  relation?: string | null;
+  memo?: string | null;
+  tags?: string[];
+}
+
+export interface PersonImportResult {
+  created: number;
+  updated: number;
+  skipped: number;
+  face_queued: number;
+  errors: string[];
+}
+
+export interface FaceImportStatus {
+  pending: number;
+  done: number;
+  failed: number;
+}
+
+export interface ReviewCandidate {
+  person_id: number;
+  name: string;
+  score: number;
+}
+
+export interface ReviewItem {
+  link_id: number;
+  photo_id: number;
+  bbox: string | null;
+  confidence: number | null;
+  person_id: number | null;
+  person_name: string | null;
+  candidates: ReviewCandidate[];
+}
+
+export interface MergeSuggestion {
+  person_a_id: number;
+  person_a_name: string;
+  person_b_id: number;
+  person_b_name: string;
+  score: number;
+}

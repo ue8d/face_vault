@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# 環境
+.env
+.env.local
+*.env.local
+
+# データ（写真/FAISS/モデル）
+/data/
+*.bin
+~/.insightface/
+
+# ローカルDB・バックアップ・一時ログ（機密含む可能性）
+*.db
+*.sqlite
+*.sqlite3
+/backups/
+backend/_*.log
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+npm-debug.log*
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
