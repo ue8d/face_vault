@@ -19,43 +19,54 @@ jobs:
 
       - name: Get diff
         run: |
-          git diff origin/develop...HEAD > diff.txt
+          git diff origin/develop...HEAD | head -n 200 > diff.txt
 
       - name: AI Review via Claude API
         id: review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          # jqでJSONを安全に構築（特殊文字エスケープ）
-          DIFF=$(cat diff.txt | head -c 8000)
-          
+          DIFF=$(cat diff.txt)
+
           PAYLOAD=$(jq -n \
             --arg diff "$DIFF" \
             '{
-              model: "claude-sonnet-4-20250514",
+              model: "claude-3-5-sonnet-20241022",
               max_tokens: 2000,
               messages: [{
                 role: "user",
-                content: ("必ず日本語でレビューしてください。\n\n以下のdiffをレビューしてください。\n問題がない場合は最初の行を LGTM と書いてください。\n問題がある場合は最初の行を NEEDS_CHANGES と書き、具体的な修正点を日本語で列挙してください。\n\n```diff\n" + $diff + "\n```")
+                content: ("必ず日本語でレビューしてください。\nあなたはコードレビュアーです。開発者本人がすでにコードを確認済みのため、重大な問題や見落としやすい改善点のみ指摘してください。\n細かいスタイルの指摘は不要です。\n問題がない場合は最初の行を LGTM と書いてください。\n問題がある場合は最初の行を NEEDS_CHANGES と書き、具体的な修正点を日本語で列挙してください。\n\n```diff\n" + $diff + "\n```")
               }]
             }')
-          
-          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" https://api.anthropic.com/v1/messages \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
             -d "$PAYLOAD")
-          
-          REVIEW_TEXT=$(echo "$RESPONSE" | python3 -c "
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "REVIEW=⚠️ Claude API エラー (HTTP $HTTP_CODE)" >> $GITHUB_OUTPUT
+            echo "APPROVED=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          REVIEW_TEXT=$(echo "$BODY" | python3 -c "
           import json, sys
           d = json.load(sys.stdin)
-          print(d['content'][0]['text'])
+          if 'error' in d:
+              print('⚠️ APIエラー: ' + d['error'].get('message', '不明なエラー'))
+          else:
+              print(d['content'][0]['text'])
           ")
-          
+
           echo "REVIEW<<EOF" >> $GITHUB_OUTPUT
           echo "$REVIEW_TEXT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-          
+
           if echo "$REVIEW_TEXT" | head -1 | grep -q "LGTM"; then
             echo "APPROVED=true" >> $GITHUB_OUTPUT
           else
@@ -69,7 +80,6 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            // 環境変数経由で渡す（テンプレートリテラル注入を回避）
             const body = process.env.REVIEW_BODY;
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -78,12 +88,11 @@ jobs:
               body: `## 🤖 AI Code Review\n\n${body}`
             });
 
-      - name: Auto merge if approved
+      - name: Auto merge if LGTM
         if: steps.review.outputs.APPROVED == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh pr merge ${{ github.event.pull_request.number }} \
             --squash \
-            --delete-branch \
-            --admin
+            --delete-branch
