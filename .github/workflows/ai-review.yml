@@ -18,24 +18,39 @@ jobs:
           fetch-depth: 0
 
       - name: Get diff
+        id: diff
         run: |
-          git diff origin/develop...HEAD | head -n 200 > diff.txt
+          git diff origin/develop...HEAD > diff.txt
+          TOTAL_LINES=$(wc -l < diff.txt)
+          echo "TOTAL_LINES=$TOTAL_LINES" >> $GITHUB_OUTPUT
 
       - name: AI Review via Claude API
         id: review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          DIFF=$(cat diff.txt)
+          TOTAL_LINES=${{ steps.diff.outputs.TOTAL_LINES }}
+          TRUNCATED=false
+
+          if [ "$TOTAL_LINES" -gt 200 ]; then
+            head -n 200 diff.txt > diff_trimmed.txt
+            TRUNCATED=true
+          else
+            cp diff.txt diff_trimmed.txt
+          fi
+
+          DIFF=$(cat diff_trimmed.txt)
 
           PAYLOAD=$(jq -n \
             --arg diff "$DIFF" \
+            --argjson truncated "$TRUNCATED" \
+            --argjson total "$TOTAL_LINES" \
             '{
-              model: "claude-sonnet-4-6",
+              model: "claude-haiku-4-5",
               max_tokens: 2000,
               messages: [{
                 role: "user",
-                content: ("必ず日本語でレビューしてください。\nあなたはコードレビュアーです。開発者本人がすでにコードを確認済みのため、重大な問題や見落としやすい改善点のみ指摘してください。\n細かいスタイルの指摘は不要です。\n問題がない場合は最初の行を LGTM と書いてください。\n問題がある場合は最初の行を NEEDS_CHANGES と書き、具体的な修正点を日本語で列挙してください。\n\n```diff\n" + $diff + "\n```")
+                content: ("必ず日本語でレビューしてください。\nあなたはコードレビュアーです。開発者本人がすでにコードを確認済みのため、重大な問題や見落としやすい改善点のみ指摘してください。\n細かいスタイルの指摘は不要です。\n問題がない場合は最初の行を LGTM と書いてください。\n問題がある場合は最初の行を NEEDS_CHANGES と書き、具体的な修正点を日本語で列挙してください。\n" + (if $truncated then "※ diffが" + ($total | tostring) + "行あるため、先頭200行のみレビューしています。\n" else "" end) + "\n```diff\n" + $diff + "\n```")
               }]
             }')
 
@@ -49,25 +64,30 @@ jobs:
           BODY=$(echo "$RESPONSE" | sed '$d')
 
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "REVIEW=⚠️ Claude API エラー (HTTP $HTTP_CODE)" >> $GITHUB_OUTPUT
-            echo "APPROVED=false" >> $GITHUB_OUTPUT
-            exit 0
+            echo "Claude API エラー (HTTP $HTTP_CODE): $BODY"
+            exit 1
           fi
 
           REVIEW_TEXT=$(echo "$BODY" | python3 -c "
           import json, sys
           d = json.load(sys.stdin)
           if 'error' in d:
-              print('⚠️ APIエラー: ' + d['error'].get('message', '不明なエラー'))
+              print('⚠️ APIエラー: ' + d['error'].get('message', '不明なエラー'), file=sys.stderr)
+              sys.exit(1)
           else:
               print(d['content'][0]['text'])
           ")
 
+          TRUNCATE_NOTE=""
+          if [ "$TRUNCATED" = "true" ]; then
+            TRUNCATE_NOTE="⚠️ diffが${TOTAL_LINES}行あるため、先頭200行のみレビューしています。\n\n"
+          fi
+
           echo "REVIEW<<EOF" >> $GITHUB_OUTPUT
-          echo "$REVIEW_TEXT" >> $GITHUB_OUTPUT
+          echo -e "${TRUNCATE_NOTE}${REVIEW_TEXT}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-          if echo "$REVIEW_TEXT" | head -1 | grep -q "LGTM"; then
+          if echo "$REVIEW_TEXT" | head -1 | grep -q "LGTM" && [ "$TRUNCATED" = "false" ]; then
             echo "APPROVED=true" >> $GITHUB_OUTPUT
           else
             echo "APPROVED=false" >> $GITHUB_OUTPUT
