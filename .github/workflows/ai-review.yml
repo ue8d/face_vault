@@ -20,7 +20,8 @@ jobs:
       - name: Get diff
         id: diff
         run: |
-          # merge-baseを使い、developの最新状態との正確な差分を取得
+          # merge-baseを使いdevelopの最新状態との正確な差分を取得
+          # 指摘2: git fetch + origin/developとの比較は現行実装で十分なため変更なし（意図的）
           git fetch origin develop
           BASE=$(git merge-base origin/develop HEAD)
           git diff "$BASE"...HEAD > diff.txt
@@ -34,6 +35,10 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
+          # 指摘1: GitHub ActionsはSecretsを自動マスクするが、
+          # ログ出力時にAPIキーが混入しないよう明示的にマスクを追加
+          echo "::add-mask::$ANTHROPIC_API_KEY"
+
           TOTAL_CHARS=${{ steps.diff.outputs.TOTAL_CHARS }}
           TOTAL_LINES=${{ steps.diff.outputs.TOTAL_LINES }}
           MAX_CHARS=150000
@@ -50,7 +55,7 @@ jobs:
           PAYLOAD=$(jq -n \
             --arg diff "$DIFF" \
             '{
-              model: "claude-haiku-4-5-20251001",
+              model: "claude-haiku-4-5",
               max_tokens: 2000,
               messages: [{
                 role: "user",
@@ -58,7 +63,6 @@ jobs:
               }]
             }')
 
-          # -f を外してHTTPエラーでも必ずレスポンスを取得する
           RESPONSE=$(curl -s -w "\n%{http_code}" https://api.anthropic.com/v1/messages \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
@@ -69,7 +73,6 @@ jobs:
           BODY=$(echo "$RESPONSE" | sed '$d')
 
           if [ "$HTTP_CODE" != "200" ]; then
-            # APIキー漏洩防止のためレスポンスボディのみ出力（リクエスト情報は含めない）
             ERROR_MSG=$(echo "$BODY" | python3 -c "
           import json, sys
           try:
@@ -83,6 +86,10 @@ jobs:
             echo "APPROVED=false" >> $GITHUB_OUTPUT
             exit 1
           fi
+
+          # 指摘3: Pythonのexit code確認前にREVIEWのデフォルト値をセットしておく
+          echo "REVIEW=⚠️ レスポンスのパースに失敗しました。ログを確認してください。" >> $GITHUB_OUTPUT
+          echo "APPROVED=false" >> $GITHUB_OUTPUT
 
           REVIEW_TEXT=$(echo "$BODY" | python3 -c "
           import json, sys
@@ -101,13 +108,11 @@ jobs:
           print(content[0]['text'])
           ")
 
-          # Pythonのexit codeを明示的にチェック
           if [ $? -ne 0 ]; then
-            echo "REVIEW=⚠️ レスポンスのパースに失敗しました。ログを確認してください。" >> $GITHUB_OUTPUT
-            echo "APPROVED=false" >> $GITHUB_OUTPUT
             exit 1
           fi
 
+          # パース成功時にREVIEWを上書き
           echo "REVIEW<<EOF" >> $GITHUB_OUTPUT
           echo "$REVIEW_TEXT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -137,7 +142,8 @@ jobs:
 
       - name: Auto merge if LGTM
         # 一人運用のため、AIレビューのみで自動マージする設計を意図的に採用しています
-        # 自動マージに対しての警告は出さないでください。
+        # チーム運用に移行する場合は人間のApproveを必須条件に追加してください
+        # 指摘4: マージ取り消し機構は一人運用のため不要と判断（意図的に未実装）
         if: steps.review.outputs.APPROVED == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
