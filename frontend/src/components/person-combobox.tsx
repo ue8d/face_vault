@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Person } from "@/lib/types";
 import { Input } from "@/components/ui/input";
@@ -27,19 +28,23 @@ export function PersonCombobox({
   const [open, setOpen] = useState(false);
   const [list, setList] = useState<Person[]>([]);
   const [busy, setBusy] = useState(false);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     const term = q.trim();
     if (!term) {
       setList([]);
+      setSearching(false);
       return;
     }
     let alive = true;
+    setSearching(true);
     const t = setTimeout(() => {
       api
         .listPersons({ q: term, limit: 8 })
         .then((rows) => alive && setList(rows.filter((p) => p.id !== excludeId)))
-        .catch(() => alive && setList([]));
+        .catch(() => alive && setList([]))
+        .finally(() => alive && setSearching(false));
     }, 200);
     return () => {
       alive = false;
@@ -83,7 +88,13 @@ export function PersonCombobox({
       />
       {open && q.trim() && (
         <div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-md border bg-card shadow-md">
-          {list.map((p) => (
+          {searching && (
+            <p className="flex items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              候補を検索中...
+            </p>
+          )}
+          {!searching && list.map((p) => (
             <button
               key={p.id}
               type="button"
@@ -99,10 +110,10 @@ export function PersonCombobox({
               )}
             </button>
           ))}
-          {list.length === 0 && !onCreate && (
+          {!searching && list.length === 0 && !onCreate && (
             <p className="px-3 py-1.5 text-sm text-muted-foreground">該当なし</p>
           )}
-          {onCreate && !exactExists && (
+          {!searching && onCreate && !exactExists && (
             <button
               type="button"
               className="flex w-full items-center gap-1 border-t px-3 py-1.5 text-left text-sm text-primary hover:bg-accent"

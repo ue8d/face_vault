@@ -1,13 +1,14 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Camera, Users, CalendarDays, RefreshCw } from "lucide-react";
+import { Camera, CalendarDays, Loader2, RefreshCw, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
 export default function Dashboard() {
   const [counts, setCounts] = useState({ photos: 0, persons: 0, events: 0 });
+  const [countsLoading, setCountsLoading] = useState(true);
   const [reindex, setReindex] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -16,7 +17,8 @@ export default function Dashboard() {
       .then(([p, pe, e]) =>
         setCounts({ photos: p.count, persons: pe.count, events: e.count }),
       )
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setCountsLoading(false));
   }, []);
 
   const doReindex = async () => {
@@ -47,7 +49,13 @@ export default function Dashboard() {
               <CardContent className="flex items-center justify-between p-6">
                 <div>
                   <p className="text-sm text-muted-foreground">{label}</p>
-                  <p className="text-3xl font-bold">{n}</p>
+                  <p className="mt-1 flex h-9 items-center text-3xl font-bold">
+                    {countsLoading ? (
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    ) : (
+                      n
+                    )}
+                  </p>
                 </div>
                 <Icon className="h-8 w-8 text-muted-foreground" />
               </CardContent>

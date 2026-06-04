@@ -9,13 +9,27 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
+import { LoadingState } from "@/components/ui/loading-state";
 import { fmtDate } from "@/lib/utils";
 
 export default function EventsPage() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
 
-  const load = () => api.listEvents().then(setEvents).catch(() => {});
+  const load = async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      setEvents(await api.listEvents());
+    } catch (e) {
+      setErr((e as Error).message);
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  };
   useEffect(() => {
     load();
   }, []);
@@ -29,7 +43,13 @@ export default function EventsPage() {
         </Button>
       </div>
 
-      {events.length === 0 ? (
+      {err && <p className="text-sm text-destructive">{err}</p>}
+
+      {loading && events.length > 0 && <LoadingState compact label="イベントを更新中..." />}
+
+      {loading && events.length === 0 ? (
+        <LoadingState label="イベントを読み込み中..." />
+      ) : events.length === 0 ? (
         <p className="text-muted-foreground">イベントなし。</p>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">

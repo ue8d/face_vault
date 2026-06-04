@@ -8,18 +8,29 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LoadingState } from "@/components/ui/loading-state";
 
 export default function SettingsPage() {
   const [items, setItems] = useState<SettingItem[]>([]);
   const [vals, setVals] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
 
   const load = async () => {
-    const it = await api.listSettings();
-    setItems(it);
-    // secret は常に空で初期化（マスク）
-    setVals(Object.fromEntries(it.map((i) => [i.key, i.type === "secret" ? "" : i.value])));
+    setLoading(true);
+    try {
+      const it = await api.listSettings();
+      setItems(it);
+      // secret は常に空で初期化（マスク）
+      setVals(Object.fromEntries(it.map((i) => [i.key, i.type === "secret" ? "" : i.value])));
+    } catch (e) {
+      setItems([]);
+      setVals({});
+      setMsg(`読み込み失敗: ${(e as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
   };
   useEffect(() => {
     load();
@@ -38,6 +49,7 @@ export default function SettingsPage() {
     const payload: Record<string, string> = {};
     for (const [key, v] of Object.entries(vals)) {
       const it = orig[key];
+      if (!it) continue;
       if (it.type === "secret") {
         if (v !== "") payload[key] = v; // 入力時のみ更新
       } else if (v !== it.value) {
@@ -69,7 +81,7 @@ export default function SettingsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">設定</h1>
-        <Button onClick={save} disabled={busy}>
+        <Button onClick={save} disabled={busy || loading || items.length === 0}>
           <Save className="h-4 w-4" /> {busy ? "保存中…" : "保存"}
         </Button>
       </div>
@@ -80,66 +92,74 @@ export default function SettingsPage() {
       </p>
       {msg && <p className="text-sm text-primary">{msg}</p>}
 
-      {Object.entries(groups).map(([group, gItems]) => (
-        <Card key={group}>
-          <CardHeader>
-            <CardTitle>{group}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {gItems.map((it) => (
-              <div key={it.key} className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <Label>{it.label}</Label>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={it.source === "db" ? "default" : "secondary"}>
-                      {it.source}
-                    </Badge>
-                    {it.type === "secret" && it.is_set && (
-                      <Badge variant="outline">設定済み</Badge>
-                    )}
-                    <button
-                      onClick={() => reset(it.key)}
-                      className="text-muted-foreground hover:text-foreground"
-                      title="デフォルトに戻す"
-                    >
-                      <RotateCcw className="h-4 w-4" />
-                    </button>
+      {loading && items.length > 0 && <LoadingState compact label="設定を更新中..." />}
+
+      {loading && items.length === 0 ? (
+        <LoadingState label="設定を読み込み中..." />
+      ) : Object.keys(groups).length === 0 ? (
+        <p className="text-muted-foreground">設定項目なし。</p>
+      ) : (
+        Object.entries(groups).map(([group, gItems]) => (
+          <Card key={group}>
+            <CardHeader>
+              <CardTitle>{group}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {gItems.map((it) => (
+                <div key={it.key} className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label>{it.label}</Label>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={it.source === "db" ? "default" : "secondary"}>
+                        {it.source}
+                      </Badge>
+                      {it.type === "secret" && it.is_set && (
+                        <Badge variant="outline">設定済み</Badge>
+                      )}
+                      <button
+                        onClick={() => reset(it.key)}
+                        className="text-muted-foreground hover:text-foreground"
+                        title="デフォルトに戻す"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-                {it.type === "bool" ? (
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4"
-                      checked={(vals[it.key] ?? "false") === "true"}
-                      onChange={(e) =>
-                        setVals((s) => ({ ...s, [it.key]: e.target.checked ? "true" : "false" }))
+                  {it.type === "bool" ? (
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={(vals[it.key] ?? "false") === "true"}
+                        onChange={(e) =>
+                          setVals((s) => ({ ...s, [it.key]: e.target.checked ? "true" : "false" }))
+                        }
+                      />
+                      {(vals[it.key] ?? "false") === "true" ? "有効" : "無効"}
+                    </label>
+                  ) : (
+                    <Input
+                      type={
+                        it.type === "secret" ? "password" : it.type === "str" ? "text" : "number"
                       }
+                      value={vals[it.key] ?? ""}
+                      onChange={(e) => setVals((s) => ({ ...s, [it.key]: e.target.value }))}
+                      placeholder={
+                        it.type === "secret"
+                          ? it.is_set
+                            ? "設定済み（変更時のみ入力）"
+                            : "未設定"
+                          : ""
+                      }
+                      className="font-mono"
                     />
-                    {(vals[it.key] ?? "false") === "true" ? "有効" : "無効"}
-                  </label>
-                ) : (
-                  <Input
-                    type={
-                      it.type === "secret" ? "password" : it.type === "str" ? "text" : "number"
-                    }
-                    value={vals[it.key] ?? ""}
-                    onChange={(e) => setVals((s) => ({ ...s, [it.key]: e.target.value }))}
-                    placeholder={
-                      it.type === "secret"
-                        ? it.is_set
-                          ? "設定済み（変更時のみ入力）"
-                          : "未設定"
-                        : ""
-                    }
-                    className="font-mono"
-                  />
-                )}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      ))}
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        ))
+      )}
     </div>
   );
 }

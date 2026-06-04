@@ -18,6 +18,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LoadingState } from "@/components/ui/loading-state";
 import { PersonFormDialog } from "@/components/person-form";
 
 const PAGE_SIZE = 100;
@@ -27,13 +28,15 @@ export default function PersonsPage() {
   const [q, setQ] = useState("");
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [hasNext, setHasNext] = useState(false);
   const [open, setOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   const load = async (query = q, nextPage = page) => {
     setLoading(true);
+    setErr(null);
     try {
       const term = query.trim() || undefined;
       const [rows, c] = await Promise.all([
@@ -43,6 +46,11 @@ export default function PersonsPage() {
       setHasNext(rows.length > PAGE_SIZE);
       setPersons(rows.slice(0, PAGE_SIZE));
       setTotal(c.count);
+    } catch (e) {
+      setErr((e as Error).message);
+      setPersons([]);
+      setHasNext(false);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
@@ -94,13 +102,19 @@ export default function PersonsPage() {
           />
         </div>
         <Button variant="outline" onClick={search} disabled={loading}>
-          検索
+          {loading ? "検索中..." : "検索"}
         </Button>
       </div>
 
+      {err && <p className="text-sm text-destructive">{err}</p>}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          {persons.length === 0 ? "0件" : `${firstNo}-${lastNo} / 全${total}件`}
+          {loading && persons.length === 0
+            ? "読み込み中..."
+            : persons.length === 0
+              ? "0件"
+              : `${firstNo}-${lastNo} / 全${total}件`}
         </p>
         <div className="flex items-center gap-2">
           <Button
@@ -143,7 +157,11 @@ export default function PersonsPage() {
         </div>
       </div>
 
-      {persons.length === 0 ? (
+      {loading && persons.length > 0 && <LoadingState compact label="人物を更新中..." />}
+
+      {loading && persons.length === 0 ? (
+        <LoadingState label="人物を読み込み中..." />
+      ) : persons.length === 0 ? (
         <p className="text-muted-foreground">該当なし</p>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
