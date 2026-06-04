@@ -44,7 +44,7 @@ def test_photo_upload_and_list(client: TestClient) -> None:
     r = client.post("/photos/upload", files=files, data={"memo": "海", "event_id": str(eid)})
     assert r.status_code == 201, r.text
     body = r.json()
-    assert body["memo"] == "海" and body["event_id"] == eid
+    assert body["memo"] == "海\n画像名: a.jpg" and body["event_id"] == eid
 
     photos = client.get("/photos", params={"event_id": eid}).json()
     assert len(photos) == 1
