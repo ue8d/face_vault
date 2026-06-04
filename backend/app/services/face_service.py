@@ -53,13 +53,35 @@ class FaceService:
         from app.services.settings_service import SettingsService
 
         cfg = SettingsService(db)
+        def cfg_float(key: str, default: float) -> float:
+            value = cfg.value(key)
+            return default if value is None else float(value)
+
+        def cfg_int(key: str, default: int) -> int:
+            value = cfg.value(key)
+            return default if value is None else int(value)
+
         if threshold is not None:
             self.threshold = threshold
         else:
             self.threshold = float(cfg.value("match_threshold") or 0.35)
-        self.min_det_score = float(cfg.value("face_min_det_score") or 0.0)
-        self.min_px = int(cfg.value("face_min_px") or 0)
-        self._face01_threshold = float(cfg.value("face01_threshold") or 0.4)
+        self.min_det_score = cfg_float("face_min_det_score", 0.0)
+        self.min_px = cfg_int("face_min_px", 0)
+        self._face01_threshold = cfg_float("face01_threshold", 0.4)
+        self.online_learning_enabled = bool(cfg.value("online_learning_enabled"))
+        self.online_learning_min_margin = cfg_float("online_learning_min_margin", 0.2)
+        self.online_learning_min_separation = cfg_float(
+            "online_learning_min_separation", 0.05
+        )
+        self.online_learning_min_centroid_similarity = cfg_float(
+            "online_learning_min_centroid_similarity", 0.45
+        )
+        self.online_learning_duplicate_similarity = cfg_float(
+            "online_learning_duplicate_similarity", 0.995
+        )
+        self.online_learning_max_embeddings = cfg_int(
+            "online_learning_max_embeddings_per_person_model", 50
+        )
         configure_runtime_embedders(
             face01_enabled=bool(cfg.value("face01_enabled")),
             face01_model_path=str(cfg.value("face01_model_path") or ""),
@@ -177,6 +199,86 @@ class FaceService:
                 )
             )
 
+    def _existing_person_vectors(self, person_id: int, model_key: str) -> list[np.ndarray]:
+        rows = self.db.execute(
+            select(PersonEmbedding.embedding).where(
+                PersonEmbedding.person_id == person_id,
+                PersonEmbedding.model_key == model_key,
+            )
+        ).scalars()
+        return [emb.from_bytes(buf) for buf in rows]
+
+    def _has_embedding_from_photo(
+        self, person_id: int, model_key: str, source_photo_id: int
+    ) -> bool:
+        return (
+            self.db.scalar(
+                select(PersonEmbedding.id).where(
+                    PersonEmbedding.person_id == person_id,
+                    PersonEmbedding.model_key == model_key,
+                    PersonEmbedding.source_photo_id == source_photo_id,
+                )
+            )
+            is not None
+        )
+
+    def _centroid_similarity(self, vec: np.ndarray, existing: list[np.ndarray]) -> float:
+        if not existing:
+            return 1.0
+        centroid = emb.l2_normalize(np.mean(np.vstack(existing), axis=0))
+        if np.linalg.norm(centroid) == 0:
+            return 0.0
+        return emb.cosine_similarity(vec, centroid)
+
+    def _maybe_online_learn(
+        self,
+        person_id: int,
+        face: DetectedFace,
+        top: Candidate,
+        candidates: list[Candidate],
+        *,
+        source_photo_id: int,
+    ) -> None:
+        """高信頼な既存人物マッチだけを代表ベクトルへ追加する。"""
+        if not self.online_learning_enabled:
+            return
+        if top.margin < self.online_learning_min_margin:
+            return
+        if not self.quality_ok(face):
+            return
+        if len(candidates) > 1:
+            separation = top.margin - candidates[1].margin
+            if separation < self.online_learning_min_separation:
+                return
+
+        vec = face.embeddings.get(top.model_key)
+        if vec is None:
+            return
+        if self._has_embedding_from_photo(person_id, top.model_key, source_photo_id):
+            return
+
+        existing = self._existing_person_vectors(person_id, top.model_key)
+        if len(existing) >= self.online_learning_max_embeddings:
+            return
+
+        normalized = emb.l2_normalize(vec)
+        if existing:
+            nearest = max(emb.cosine_similarity(normalized, current) for current in existing)
+            if nearest >= self.online_learning_duplicate_similarity:
+                return
+            if (
+                self._centroid_similarity(normalized, existing)
+                < self.online_learning_min_centroid_similarity
+            ):
+                return
+
+        self.register_embedding(
+            person_id,
+            normalized,
+            model_key=top.model_key,
+            source_photo_id=source_photo_id,
+        )
+
     # --- 写真処理（検出済みfacesから） ---
     def process_detections(
         self, photo: Photo, faces: list[DetectedFace], *, auto_enroll: bool | None = None
@@ -195,9 +297,10 @@ class FaceService:
         links: list[PhotoPerson] = []
         used: set[int] = set()  # 同一写真内で同一人物への重複リンク防止（uq_photo_person）
         # 各顔の最良候補を先に算出し、margin の高い順に確定（重複時は高margin側を残す）
-        scored = [(f, (self.match(f.embeddings, k=1) or [None])[0]) for f in faces]
-        scored.sort(key=lambda t: t[1].margin if t[1] else -1.0, reverse=True)
-        for f, top in scored:
+        scored = [(f, self.match(f.embeddings, k=3)) for f in faces]
+        scored.sort(key=lambda t: t[1][0].margin if t[1] else -1.0, reverse=True)
+        for f, candidates in scored:
+            top = candidates[0] if candidates else None
             matched = top.person_id if top and top.margin >= 0 else None
 
             if matched is not None and matched in used:
@@ -208,6 +311,14 @@ class FaceService:
 
             if matched is not None:
                 used.add(matched)
+                if top is not None:
+                    self._maybe_online_learn(
+                        matched,
+                        f,
+                        top,
+                        candidates,
+                        source_photo_id=photo.id,
+                    )
 
             x, y, w, h = f.bbox
             link = PhotoPerson(

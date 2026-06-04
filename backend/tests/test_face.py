@@ -24,6 +24,15 @@ def _unit(seed: int) -> np.ndarray:
     return v / np.linalg.norm(v)
 
 
+def _with_similarity(base: np.ndarray, seed: int, score: float) -> np.ndarray:
+    """base とのコサイン類似が score になる単位ベクトルを作る。"""
+    base = base / np.linalg.norm(base)
+    other = _unit(seed)
+    orth = other - float(np.dot(other, base)) * base
+    orth = orth / np.linalg.norm(orth)
+    return (score * base + np.sqrt(1 - score**2) * orth).astype("float32")
+
+
 class FakeDetector:
     """与えた埋め込み列をそのまま検出顔として返す。"""
 
@@ -98,6 +107,140 @@ def test_process_detections_assigns_and_cooccurs(db: Session) -> None:
     # 共起: Alice-Bob ペア +1
     comp = CooccurrenceService(db).top_companions(alice.id)
     assert comp and comp[0] == (bob.id, 1)
+
+
+def test_online_learning_adds_high_confidence_match(db: Session) -> None:
+    from sqlalchemy import func, select
+
+    from app.models.person_embedding import PersonEmbedding
+
+    alice = _mk_person(db, "Alice")
+    base = _unit(10)
+    learned = _with_similarity(base, 99, 0.8)
+    svc = FaceService(db, VectorIndex(dim=DIM), threshold=0.5)
+    svc.register_embedding(alice.id, base)
+    photo = Photo(path="p.jpg")
+    db.add(photo)
+    db.flush()
+
+    face = DetectedFace(bbox=(0, 0, 120, 120), embedding=learned, det_score=0.9)
+    links = svc.process_detections(photo, [face], auto_enroll=False)
+
+    assert links[0].person_id == alice.id
+    assert (
+        db.scalar(
+            select(func.count(PersonEmbedding.id)).where(
+                PersonEmbedding.person_id == alice.id
+            )
+        )
+        == 2
+    )
+    assert db.scalar(
+        select(PersonEmbedding.id).where(
+            PersonEmbedding.person_id == alice.id,
+            PersonEmbedding.source_photo_id == photo.id,
+        )
+    )
+
+
+def test_online_learning_skips_low_margin_match(db: Session) -> None:
+    from sqlalchemy import func, select
+
+    from app.models.person_embedding import PersonEmbedding
+
+    alice = _mk_person(db, "Alice")
+    base = _unit(10)
+    low_margin = _with_similarity(base, 99, 0.55)
+    svc = FaceService(db, VectorIndex(dim=DIM), threshold=0.5)
+    svc.register_embedding(alice.id, base)
+    photo = Photo(path="p.jpg")
+    db.add(photo)
+    db.flush()
+
+    links = svc.process_detections(
+        photo,
+        [DetectedFace(bbox=(0, 0, 120, 120), embedding=low_margin, det_score=0.9)],
+        auto_enroll=False,
+    )
+
+    assert links[0].person_id == alice.id
+    assert (
+        db.scalar(
+            select(func.count(PersonEmbedding.id)).where(
+                PersonEmbedding.person_id == alice.id
+            )
+        )
+        == 1
+    )
+
+
+def test_online_learning_skips_ambiguous_match(db: Session) -> None:
+    from sqlalchemy import func, select
+
+    from app.models.person_embedding import PersonEmbedding
+
+    alice = _mk_person(db, "Alice")
+    bob = _mk_person(db, "Bob")
+    alice_vec = _unit(10)
+    query = _with_similarity(alice_vec, 99, 0.8)
+    bob_vec = _with_similarity(query, 20, 0.78)
+    svc = FaceService(db, VectorIndex(dim=DIM), threshold=0.5)
+    svc.register_embedding(alice.id, alice_vec)
+    svc.register_embedding(bob.id, bob_vec)
+    photo = Photo(path="p.jpg")
+    db.add(photo)
+    db.flush()
+
+    links = svc.process_detections(
+        photo,
+        [DetectedFace(bbox=(0, 0, 120, 120), embedding=query, det_score=0.9)],
+        auto_enroll=False,
+    )
+
+    assert links[0].person_id == alice.id
+    assert (
+        db.scalar(
+            select(func.count(PersonEmbedding.id)).where(
+                PersonEmbedding.person_id == alice.id
+            )
+        )
+        == 1
+    )
+
+
+def test_online_learning_skips_centroid_drift(db: Session) -> None:
+    from sqlalchemy import func, select
+
+    from app.models.person_embedding import PersonEmbedding
+    from app.services.settings_service import SettingsService
+
+    SettingsService(db).update({"online_learning_min_centroid_similarity": "0.9"})
+    alice = _mk_person(db, "Alice")
+    base = _unit(10)
+    off_center = _unit(20)
+    query = _with_similarity(base, 99, 0.8)
+    svc = FaceService(db, VectorIndex(dim=DIM), threshold=0.5)
+    svc.register_embedding(alice.id, base)
+    svc.register_embedding(alice.id, off_center)
+    photo = Photo(path="p.jpg")
+    db.add(photo)
+    db.flush()
+
+    links = svc.process_detections(
+        photo,
+        [DetectedFace(bbox=(0, 0, 120, 120), embedding=query, det_score=0.9)],
+        auto_enroll=False,
+    )
+
+    assert links[0].person_id == alice.id
+    assert (
+        db.scalar(
+            select(func.count(PersonEmbedding.id)).where(
+                PersonEmbedding.person_id == alice.id
+            )
+        )
+        == 2
+    )
 
 
 def test_unmatched_face_stays_null_without_autoenroll(db: Session) -> None:

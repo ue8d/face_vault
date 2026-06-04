@@ -9,7 +9,12 @@ from app.services.settings_service import SettingsService
 def test_list_settings_defaults(client: TestClient) -> None:
     items = client.get("/settings").json()
     keys = {i["key"] for i in items}
-    assert {"ai_provider", "anthropic_api_key", "match_threshold"} <= keys
+    assert {
+        "ai_provider",
+        "anthropic_api_key",
+        "match_threshold",
+        "online_learning_enabled",
+    } <= keys
     ai = next(i for i in items if i["key"] == "ai_provider")
     assert ai["value"] == "anthropic"  # env/デフォルト
     assert ai["source"] == "env/default"
@@ -39,6 +44,11 @@ def test_clear_reverts_to_default(client: TestClient) -> None:
 
 def test_typed_value(db) -> None:
     svc = SettingsService(db)
-    svc.update({"match_threshold": "0.5", "ai_max_tokens": "256"})
+    svc.update({
+        "match_threshold": "0.5",
+        "ai_max_tokens": "256",
+        "online_learning_enabled": "false",
+    })
     assert isinstance(svc.value("match_threshold"), float) and svc.value("match_threshold") == 0.5
     assert isinstance(svc.value("ai_max_tokens"), int) and svc.value("ai_max_tokens") == 256
+    assert svc.value("online_learning_enabled") is False

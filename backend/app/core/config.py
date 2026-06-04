@@ -44,6 +44,18 @@ class Settings(BaseSettings):
     merge_suggest_threshold: float = 0.5
     # アップロード時、既存人物に一致しない顔を新規人物として自動登録
     auto_enroll_faces: bool = True
+    # 高信頼マッチした既存人物へ検出顔ベクトルを自動追加する
+    online_learning_enabled: bool = True
+    # 自動追加に必要な「score - モデル別照合閾値」
+    online_learning_min_margin: float = 0.2
+    # 2番手候補との差がこれ未満なら人物が曖昧なので追加しない
+    online_learning_min_separation: float = 0.05
+    # 既存の人物ベクトル重心から離れすぎた顔は追加しない
+    online_learning_min_centroid_similarity: float = 0.45
+    # 既存ベクトルに近すぎる顔は重複として追加しない
+    online_learning_duplicate_similarity: float = 0.995
+    # 1人物・1モデルあたりの自動追加上限
+    online_learning_max_embeddings_per_person_model: int = 50
     faiss_index_path: str = "/data/faiss/index.bin"
 
     # Face01 / JAPANESE FACE v1（日本人特化・EfficientNetV2+ArcFace）並行モデル
