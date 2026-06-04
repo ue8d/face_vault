@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Upload, ImageOff } from "lucide-react";
+import { Images, LinkIcon, Upload } from "lucide-react";
 import { api, photoRawUrl } from "@/lib/api";
 import type { EventItem, Photo } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { fmtDate } from "@/lib/utils";
+
+const parseUrlInput = (value: string) =>
+  value
+    .split(/[\n,]+/)
+    .map((url) => url.trim())
+    .filter(Boolean);
 
 export default function PhotosPage() {
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -30,7 +36,7 @@ export default function PhotosPage() {
         <h1 className="text-2xl font-bold">写真</h1>
         <Button onClick={() => setOpen(true)}>
           <Upload className="h-4 w-4" />
-          アップロード
+          取り込み
         </Button>
       </div>
 
@@ -66,10 +72,7 @@ export default function PhotosPage() {
         open={open}
         onClose={() => setOpen(false)}
         events={events}
-        onDone={() => {
-          setOpen(false);
-          load();
-        }}
+        onImported={load}
       />
     </div>
   );
@@ -79,36 +82,85 @@ function UploadDialog({
   open,
   onClose,
   events,
-  onDone,
+  onImported,
 }: {
   open: boolean;
   onClose: () => void;
   events: EventItem[];
-  onDone: () => void;
+  onImported: () => void;
 }) {
-  const [file, setFile] = useState<File | null>(null);
+  const [mode, setMode] = useState<"files" | "url">("files");
+  const [files, setFiles] = useState<File[]>([]);
+  const [fileInputKey, setFileInputKey] = useState(0);
+  const [imageUrls, setImageUrls] = useState("");
   const [memo, setMemo] = useState("");
   const [eventId, setEventId] = useState("");
   const [takenAt, setTakenAt] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const urlCount = parseUrlInput(imageUrls).length;
+  const canSubmit = mode === "files" ? files.length > 0 : urlCount > 0;
+  let submitLabel = "取り込み";
+  if (busy) {
+    submitLabel = "取り込み中...";
+  } else if (mode === "files" && files.length > 1) {
+    submitLabel = `${files.length}件取り込み`;
+  } else if (mode === "url" && urlCount > 1) {
+    submitLabel = `${urlCount}件取り込み`;
+  }
+
+  const reset = () => {
+    setFiles([]);
+    setFileInputKey((key) => key + 1);
+    setImageUrls("");
+    setMemo("");
+    setEventId("");
+    setTakenAt("");
+  };
 
   const submit = async () => {
-    if (!file) return;
+    if (!canSubmit) return;
     setBusy(true);
     setErr(null);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      if (memo) fd.append("memo", memo);
-      if (eventId) fd.append("event_id", eventId);
-      if (takenAt) fd.append("taken_at", new Date(takenAt).toISOString());
-      await api.uploadPhoto(fd);
-      setFile(null);
-      setMemo("");
-      setEventId("");
-      setTakenAt("");
-      onDone();
+      if (mode === "files") {
+        const fd = new FormData();
+        files.forEach((selected) => fd.append("files", selected));
+        if (memo) fd.append("memo", memo);
+        if (eventId) fd.append("event_id", eventId);
+        if (takenAt) fd.append("taken_at", new Date(takenAt).toISOString());
+        const result = await api.uploadPhotosBulk(fd);
+        onImported();
+        if (result.errors.length > 0) {
+          setFiles([]);
+          setFileInputKey((key) => key + 1);
+          setErr(
+            `${result.created.length}件取り込みました。失敗: ${result.errors
+              .map((item) => `${item.source} (${item.detail})`)
+              .join(" / ")}`,
+          );
+          return;
+        }
+      } else {
+        const result = await api.importPhotoUrls({
+          urls: parseUrlInput(imageUrls),
+          memo: memo || undefined,
+          event_id: eventId ? Number(eventId) : undefined,
+          taken_at: takenAt ? new Date(takenAt).toISOString() : undefined,
+        });
+        onImported();
+        if (result.errors.length > 0) {
+          setImageUrls(result.errors.map((item) => item.source).join("\n"));
+          setErr(
+            `${result.created.length}件取り込みました。失敗: ${result.errors
+              .map((item) => `${item.source} (${item.detail})`)
+              .join(" / ")}`,
+          );
+          return;
+        }
+      }
+      reset();
+      onClose();
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -117,11 +169,57 @@ function UploadDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title="写真アップロード">
+    <Dialog open={open} onClose={onClose} title="写真取り込み">
       <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-1 rounded-md border bg-muted p-1">
+          <Button
+            type="button"
+            variant={mode === "files" ? "secondary" : "ghost"}
+            onClick={() => {
+              setMode("files");
+              setErr(null);
+            }}
+          >
+            <Images className="h-4 w-4" />
+            ファイル
+          </Button>
+          <Button
+            type="button"
+            variant={mode === "url" ? "secondary" : "ghost"}
+            onClick={() => {
+              setMode("url");
+              setErr(null);
+            }}
+          >
+            <LinkIcon className="h-4 w-4" />
+            URL
+          </Button>
+        </div>
         <div className="space-y-1.5">
-          <Label>画像ファイル</Label>
-          <Input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          {mode === "files" ? (
+            <>
+              <Label>画像ファイル</Label>
+              <Input
+                key={fileInputKey}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+              />
+              {files.length > 0 && (
+                <p className="text-xs text-muted-foreground">{files.length}件選択中</p>
+              )}
+            </>
+          ) : (
+            <>
+              <Label>画像URL</Label>
+              <Textarea
+                value={imageUrls}
+                placeholder={"https://example.com/a.jpg, https://example.com/b.jpg"}
+                onChange={(e) => setImageUrls(e.target.value)}
+              />
+            </>
+          )}
         </div>
         <div className="space-y-1.5">
           <Label>撮影日時</Label>
@@ -151,8 +249,8 @@ function UploadDialog({
           <Button variant="outline" onClick={onClose}>
             キャンセル
           </Button>
-          <Button onClick={submit} disabled={!file || busy}>
-            {busy ? "アップロード中…" : "アップロード"}
+          <Button onClick={submit} disabled={!canSubmit || busy}>
+            {submitLabel}
           </Button>
         </div>
       </div>

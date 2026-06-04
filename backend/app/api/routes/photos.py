@@ -10,7 +10,14 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.base import get_db
-from app.schemas.photo import PhotoFilter, PhotoOut, PhotoUpdate
+from app.schemas.photo import (
+    PhotoBulkImportResult,
+    PhotoFilter,
+    PhotoOut,
+    PhotoUpdate,
+    PhotoUrlImport,
+    PhotoUrlsImport,
+)
 from app.services.photo_service import PhotoService
 
 settings = get_settings()
@@ -41,7 +48,99 @@ async def upload_photo(
         memo=memo,
         event_id=event_id,
         taken_at=taken_at,
+        include_filename_in_memo=True,
     )
+
+
+@router.post(
+    "/upload-bulk",
+    response_model=PhotoBulkImportResult,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_photos_bulk(
+    files: list[UploadFile] = File(...),
+    memo: str | None = Form(default=None),
+    event_id: int | None = Form(default=None),
+    taken_at: datetime | None = Form(default=None),
+    svc: PhotoService = Depends(_service),
+):
+    """複数画像をまとめて保存する。失敗したファイルは errors に残す。"""
+    if not files:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "file required")
+
+    created = []
+    errors = []
+    for index, file in enumerate(files, start=1):
+        source = file.filename or f"upload-{index}.jpg"
+        try:
+            content = await file.read()
+            if not content:
+                raise ValueError("空のファイル")
+            created.append(
+                svc.save_upload(
+                    content=content,
+                    filename=source,
+                    memo=memo,
+                    event_id=event_id,
+                    taken_at=taken_at,
+                    include_filename_in_memo=True,
+                )
+            )
+        except Exception as e:  # noqa: BLE001 - 一括取込では1件失敗しても継続
+            svc.db.rollback()
+            errors.append({"source": source, "detail": str(e)})
+
+    if not created and errors:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, errors[0]["detail"])
+    return {"created": created, "errors": errors}
+
+
+@router.post("/import-url", response_model=PhotoOut, status_code=status.HTTP_201_CREATED)
+def import_photo_from_url(data: PhotoUrlImport, svc: PhotoService = Depends(_service)):
+    """URLから画像を取得して写真として保存する。"""
+    try:
+        return svc.save_from_url(
+            url=str(data.url),
+            memo=data.memo,
+            event_id=data.event_id,
+            taken_at=data.taken_at,
+            include_filename_in_memo=True,
+        )
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+
+
+@router.post(
+    "/import-urls",
+    response_model=PhotoBulkImportResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def import_photos_from_urls(data: PhotoUrlsImport, svc: PhotoService = Depends(_service)):
+    """複数URLから画像を取得して写真として保存する。失敗URLは errors に残す。"""
+    if not data.urls:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "url required")
+
+    created = []
+    errors = []
+    for url in data.urls:
+        source = str(url)
+        try:
+            created.append(
+                svc.save_from_url(
+                    url=source,
+                    memo=data.memo,
+                    event_id=data.event_id,
+                    taken_at=data.taken_at,
+                    include_filename_in_memo=True,
+                )
+            )
+        except Exception as e:  # noqa: BLE001 - 一括取込では1件失敗しても継続
+            svc.db.rollback()
+            errors.append({"source": source, "detail": str(e)})
+
+    if not created and errors:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, errors[0]["detail"])
+    return {"created": created, "errors": errors}
 
 
 @router.get("", response_model=list[PhotoOut])

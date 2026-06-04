@@ -37,6 +37,30 @@ export interface PhotoUpdate {
   event_id?: number | null;
 }
 
+export interface PhotoUrlImport {
+  url: string;
+  taken_at?: string | null;
+  memo?: string | null;
+  event_id?: number | null;
+}
+
+export interface PhotoUrlsImport {
+  urls: string[];
+  taken_at?: string | null;
+  memo?: string | null;
+  event_id?: number | null;
+}
+
+export interface PhotoImportError {
+  source: string;
+  detail: string;
+}
+
+export interface PhotoBulkImportResult {
+  created: Photo[];
+  errors: PhotoImportError[];
+}
+
 export interface EventItem {
   id: number;
   name: string;

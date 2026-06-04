@@ -10,6 +10,9 @@ import type {
   FaceImportStatus,
   MergeSuggestion,
   ReviewItem,
+  PhotoBulkImportResult,
+  PhotoUrlImport,
+  PhotoUrlsImport,
 } from "./types";
 
 export const API_BASE =
@@ -135,6 +138,15 @@ export const api = {
     http<Photo>(`/photos/${id}/reprocess`, { method: "POST" }),
   uploadPhoto: (form: FormData) =>
     http<Photo>(`/photos/upload`, { method: "POST", body: form }),
+  uploadPhotosBulk: (form: FormData) =>
+    http<PhotoBulkImportResult>(`/photos/upload-bulk`, { method: "POST", body: form }),
+  importPhotoUrl: (data: PhotoUrlImport) =>
+    http<Photo>(`/photos/import-url`, { method: "POST", body: JSON.stringify(data) }),
+  importPhotoUrls: (data: PhotoUrlsImport) =>
+    http<PhotoBulkImportResult>(`/photos/import-urls`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 
   // faces
   confirmFace: (linkId: number, personId: number) =>

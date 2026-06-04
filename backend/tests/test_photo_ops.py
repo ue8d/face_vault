@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+from email.message import EmailMessage
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -32,6 +33,98 @@ def test_upload_uses_exif_when_no_taken_at(client: TestClient) -> None:
     r = client.post("/photos/upload", files=files)
     assert r.status_code == 201, r.text
     assert r.json()["taken_at"].startswith("2018-03-04")
+
+
+def test_import_photo_from_url(client: TestClient, monkeypatch) -> None:
+    class FakeResponse:
+        def __init__(self, content: bytes) -> None:
+            self.content = content
+            self.headers = EmailMessage()
+            self.headers["Content-Type"] = "image/jpeg"
+
+        def read(self, size: int = -1) -> bytes:
+            return self.content if size < 0 else self.content[:size]
+
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, *args) -> None:
+            return None
+
+    def fake_urlopen(req, timeout: int):
+        assert req.full_url == "https://example.com/p.jpg"
+        assert timeout == 20
+        return FakeResponse(_jpeg_with_exif(None))
+
+    monkeypatch.setattr("app.services.photo_service.urllib.request.urlopen", fake_urlopen)
+
+    r = client.post(
+        "/photos/import-url",
+        json={"url": "https://example.com/p.jpg", "memo": "URL取込"},
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["memo"] == "URL取込\n画像名: p.jpg"
+    assert client.get(f"/photos/{body['id']}/raw").status_code == 200
+
+
+def test_import_photos_from_urls(client: TestClient, monkeypatch) -> None:
+    class FakeResponse:
+        def __init__(self, content: bytes) -> None:
+            self.content = content
+            self.headers = EmailMessage()
+            self.headers["Content-Type"] = "image/jpeg"
+
+        def read(self, size: int = -1) -> bytes:
+            return self.content if size < 0 else self.content[:size]
+
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, *args) -> None:
+            return None
+
+    seen: list[str] = []
+
+    def fake_urlopen(req, timeout: int):
+        seen.append(req.full_url)
+        assert timeout == 20
+        return FakeResponse(_jpeg_with_exif(None))
+
+    monkeypatch.setattr("app.services.photo_service.urllib.request.urlopen", fake_urlopen)
+
+    r = client.post(
+        "/photos/import-urls",
+        json={
+            "urls": ["https://example.com/a.jpg", "https://example.com/b.jpg"],
+            "memo": "URL一括",
+        },
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert seen == ["https://example.com/a.jpg", "https://example.com/b.jpg"]
+    assert len(body["created"]) == 2
+    assert body["errors"] == []
+    assert {p["memo"] for p in body["created"]} == {
+        "URL一括\n画像名: a.jpg",
+        "URL一括\n画像名: b.jpg",
+    }
+
+
+def test_upload_photos_bulk(client: TestClient) -> None:
+    files = [
+        ("files", ("a.jpg", io.BytesIO(_jpeg_with_exif(None)), "image/jpeg")),
+        ("files", ("b.jpg", io.BytesIO(_jpeg_with_exif(None)), "image/jpeg")),
+    ]
+    r = client.post("/photos/upload-bulk", files=files, data={"memo": "一括"})
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert len(body["created"]) == 2
+    assert body["errors"] == []
+    assert {p["memo"] for p in body["created"]} == {
+        "一括\n画像名: a.jpg",
+        "一括\n画像名: b.jpg",
+    }
 
 
 def test_delete_photo(client: TestClient) -> None:

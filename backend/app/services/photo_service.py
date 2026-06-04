@@ -7,9 +7,13 @@ from __future__ import annotations
 
 import io
 import logging
+import mimetypes
+import urllib.request
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 from sqlalchemy.orm import Session
 
@@ -20,6 +24,8 @@ from app.schemas.photo import PhotoFilter, PhotoUpdate
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
+_MAX_URL_IMAGE_BYTES = 20 * 1024 * 1024
+_URL_DOWNLOAD_TIMEOUT = 20
 
 
 def _exif_taken_at(content: bytes) -> datetime | None:
@@ -39,6 +45,68 @@ def _exif_taken_at(content: bytes) -> datetime | None:
         return dt.replace(tzinfo=timezone.utc)  # EXIFはtz無し → UTC扱い
     except Exception:  # noqa: BLE001 - EXIF無効でもアップロードは継続
         return None
+
+
+def _encode_url(url: str) -> str:
+    """非ASCIIを含むURLのpath/queryをHTTP取得用にpercent-encodeする。"""
+    p = urlsplit(url.strip())
+    return urlunsplit(
+        (p.scheme, p.netloc, quote(p.path), quote(p.query, safe="=&?"), p.fragment)
+    )
+
+
+def _download_image_from_url(url: str) -> tuple[bytes, str]:
+    parsed = urlsplit(url.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("URLは http または https を指定してください")
+
+    req = urllib.request.Request(
+        _encode_url(url), headers={"User-Agent": "face_vault/1.0"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=_URL_DOWNLOAD_TIMEOUT) as resp:
+            content_type = (
+                resp.headers.get_content_type() if resp.headers.get("Content-Type") else ""
+            )
+            if content_type and not (
+                content_type.startswith("image/")
+                or content_type in {"application/octet-stream", "binary/octet-stream"}
+            ):
+                raise ValueError("画像URLではありません")
+            content = resp.read(_MAX_URL_IMAGE_BYTES + 1)
+    except HTTPError as e:
+        raise ValueError(f"画像の取得に失敗しました ({e.code})") from e
+    except URLError as e:
+        raise ValueError(f"画像の取得に失敗しました: {e.reason}") from e
+    except TimeoutError as e:
+        raise ValueError("画像の取得がタイムアウトしました") from e
+
+    if len(content) > _MAX_URL_IMAGE_BYTES:
+        raise ValueError("画像が大きすぎます")
+    if not content:
+        raise ValueError("空の応答")
+
+    filename = unquote(Path(parsed.path).name) or "url-image"
+    if not Path(filename).suffix:
+        ext = (
+            mimetypes.guess_extension(content_type)
+            if content_type.startswith("image/")
+            else None
+        )
+        filename = f"{filename}{ext or '.jpg'}"
+    return content, filename
+
+
+def _display_filename(filename: str) -> str:
+    name = unquote(filename.strip().replace("\\", "/").rsplit("/", 1)[-1])
+    return name or "upload.jpg"
+
+
+def _memo_with_image_name(memo: str | None, filename: str) -> str:
+    line = f"画像名: {_display_filename(filename)}"
+    if memo and memo.strip():
+        return f"{memo.rstrip()}\n{line}"
+    return line
 
 
 class PhotoService:
@@ -147,6 +215,7 @@ class PhotoService:
         memo: str | None = None,
         event_id: int | None = None,
         taken_at: datetime | None = None,
+        include_filename_in_memo: bool = False,
     ) -> Photo:
         self.storage.mkdir(parents=True, exist_ok=True)
         ext = Path(filename).suffix or ".jpg"
@@ -155,7 +224,7 @@ class PhotoService:
 
         photo = Photo(
             path=rel,
-            memo=memo,
+            memo=_memo_with_image_name(memo, filename) if include_filename_in_memo else memo,
             event_id=event_id,
             # 明示指定 > EXIF撮影日時 > アップロード時刻
             taken_at=taken_at or _exif_taken_at(content) or datetime.now(timezone.utc),
@@ -178,3 +247,22 @@ class PhotoService:
 
         self.db.refresh(photo)
         return photo
+
+    def save_from_url(
+        self,
+        *,
+        url: str,
+        memo: str | None = None,
+        event_id: int | None = None,
+        taken_at: datetime | None = None,
+        include_filename_in_memo: bool = False,
+    ) -> Photo:
+        content, filename = _download_image_from_url(url)
+        return self.save_upload(
+            content=content,
+            filename=filename,
+            memo=memo,
+            event_id=event_id,
+            taken_at=taken_at,
+            include_filename_in_memo=include_filename_in_memo,
+        )

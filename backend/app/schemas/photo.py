@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 
 from app.schemas.common import ORMModel
 
@@ -30,6 +30,30 @@ class PhotoUpdate(BaseModel):
     taken_at: datetime | None = None
     memo: str | None = None
     event_id: int | None = None
+
+
+class PhotoUrlImport(BaseModel):
+    url: HttpUrl
+    taken_at: datetime | None = None
+    memo: str | None = None
+    event_id: int | None = None
+
+
+class PhotoUrlsImport(BaseModel):
+    urls: list[HttpUrl]
+    taken_at: datetime | None = None
+    memo: str | None = None
+    event_id: int | None = None
+
+
+class PhotoImportError(BaseModel):
+    source: str
+    detail: str
+
+
+class PhotoBulkImportResult(BaseModel):
+    created: list[PhotoOut]
+    errors: list[PhotoImportError] = []
 
 
 class PhotoFilter(BaseModel):
