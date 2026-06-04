@@ -18,32 +18,35 @@ jobs:
           fetch-depth: 0
 
       - name: Get diff
-        id: diff
         run: |
           git diff origin/develop...HEAD > diff.txt
-          echo "DIFF_SIZE=$(wc -c < diff.txt)" >> $GITHUB_OUTPUT
 
       - name: AI Review via Claude API
         id: review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
+          # jqでJSONを安全に構築（特殊文字エスケープ）
           DIFF=$(cat diff.txt | head -c 8000)
+          
+          PAYLOAD=$(jq -n \
+            --arg diff "$DIFF" \
+            '{
+              model: "claude-sonnet-4-20250514",
+              max_tokens: 2000,
+              messages: [{
+                role: "user",
+                content: ("必ず日本語でレビューしてください。\n\n以下のdiffをレビューしてください。\n問題がない場合は最初の行を LGTM と書いてください。\n問題がある場合は最初の行を NEEDS_CHANGES と書き、具体的な修正点を日本語で列挙してください。\n\n```diff\n" + $diff + "\n```")
+              }]
+            }')
           
           RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
-            -d "{
-              \"model\": \"claude-sonnet-4-20250514\",
-              \"max_tokens\": 2000,
-              \"messages\": [{
-                \"role\": \"user\",
-                \"content\": \"以下のdiffをレビューしてください。\n問題がない場合は最初の行を LGTM と書いてください。\n問題がある場合は最初の行を NEEDS_CHANGES と書き、具体的な修正点を列挙してください。\n\n\`\`\`diff\n${DIFF}\n\`\`\`\"
-              }]
-            }")
+            -d "$PAYLOAD")
           
-          REVIEW_TEXT=$(echo $RESPONSE | python3 -c "
+          REVIEW_TEXT=$(echo "$RESPONSE" | python3 -c "
           import json, sys
           d = json.load(sys.stdin)
           print(d['content'][0]['text'])
@@ -60,14 +63,19 @@ jobs:
           fi
 
       - name: Post review comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REVIEW_BODY: ${{ steps.review.outputs.REVIEW }}
         uses: actions/github-script@v7
         with:
           script: |
+            // 環境変数経由で渡す（テンプレートリテラル注入を回避）
+            const body = process.env.REVIEW_BODY;
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: `## 🤖 AI Code Review\n\n${{ steps.review.outputs.REVIEW }}`
+              body: `## 🤖 AI Code Review\n\n${body}`
             });
 
       - name: Auto merge if approved
