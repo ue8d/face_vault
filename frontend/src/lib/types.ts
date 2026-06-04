@@ -100,7 +100,11 @@ export interface ReviewItem {
 export interface MergeSuggestion {
   person_a_id: number;
   person_a_name: string;
+  person_a_photo_id: number | null;
+  person_a_link_id: number | null;
   person_b_id: number;
   person_b_name: string;
+  person_b_photo_id: number | null;
+  person_b_link_id: number | null;
   score: number;
 }

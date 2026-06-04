@@ -9,13 +9,42 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PersonCombobox } from "@/components/person-combobox";
 
+function SuggestionFace({
+  personId,
+  name,
+  photoId,
+  linkId,
+}: {
+  personId: number;
+  name: string;
+  photoId: number | null;
+  linkId: number | null;
+}) {
+  return (
+    <Link href={`/persons/${personId}`} className="flex flex-col items-center gap-1">
+      <div className="h-16 w-16 shrink-0 overflow-hidden rounded-md border bg-muted">
+        {photoId != null && linkId != null && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={faceCropUrl(photoId, linkId)}
+            alt={name}
+            className="h-full w-full object-cover"
+            onError={(e) => (e.currentTarget.style.display = "none")}
+          />
+        )}
+      </div>
+      <span className="max-w-[5rem] truncate text-xs font-medium underline">{name}</span>
+    </Link>
+  );
+}
+
 export default function ReviewPage() {
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [suggestions, setSuggestions] = useState<MergeSuggestion[]>([]);
 
   const load = () => {
     api.reviewFaces(40).then(setItems).catch(() => {});
-    api.mergeSuggestions(40).then(setSuggestions).catch(() => {});
+    api.mergeSuggestions().then(setSuggestions).catch(() => {});
   };
   useEffect(load, []);
 
@@ -154,15 +183,21 @@ export default function ReviewPage() {
             {suggestions.map((s) => (
               <Card key={`${s.person_a_id}-${s.person_b_id}`}>
                 <CardContent className="flex flex-wrap items-center justify-between gap-2 p-3">
-                  <div className="text-sm">
-                    <Link href={`/persons/${s.person_a_id}`} className="font-medium underline">
-                      {s.person_a_name}
-                    </Link>
-                    <span className="mx-2 text-muted-foreground">↔</span>
-                    <Link href={`/persons/${s.person_b_id}`} className="font-medium underline">
-                      {s.person_b_name}
-                    </Link>
-                    <Badge variant="secondary" className="ml-2">
+                  <div className="flex items-center gap-3 text-sm">
+                    <SuggestionFace
+                      personId={s.person_a_id}
+                      name={s.person_a_name}
+                      photoId={s.person_a_photo_id}
+                      linkId={s.person_a_link_id}
+                    />
+                    <span className="text-muted-foreground">↔</span>
+                    <SuggestionFace
+                      personId={s.person_b_id}
+                      name={s.person_b_name}
+                      photoId={s.person_b_photo_id}
+                      linkId={s.person_b_link_id}
+                    />
+                    <Badge variant="secondary" className="ml-1">
                       類似 {s.score.toFixed(2)}
                     </Badge>
                   </div>

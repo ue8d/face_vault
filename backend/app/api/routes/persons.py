@@ -106,8 +106,8 @@ def count_persons(
 
 
 @router.get("/merge-suggestions", response_model=list[MergeSuggestionOut])
-def merge_suggestions(limit: int = 20, db: Session = Depends(get_db)):
-    """ベクトル近接の別人物ペア（重複の疑い）を提案。"""
+def merge_suggestions(limit: int | None = None, db: Session = Depends(get_db)):
+    """ベクトル近接の別人物ペア（重複の疑い）を提案。limit 未指定で全件。"""
     from app.face.registry import get_index
     from app.services.merge_suggest_service import MergeSuggestService
 
