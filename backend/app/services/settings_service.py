@@ -43,6 +43,27 @@ SPECS: list[SettingSpec] = [
     SettingSpec("face_min_px", "品質ゲート 最低顔サイズ(px)", "int", "顔認識"),
     SettingSpec("review_confidence", "確認キュー 信頼度しきい値", "float", "顔認識"),
     SettingSpec("merge_suggest_threshold", "統合候補 類似しきい値", "float", "顔認識"),
+    SettingSpec("online_learning_enabled", "オンライン学習を有効化", "bool", "顔認識"),
+    SettingSpec("online_learning_min_margin", "オンライン学習 最小マージン", "float", "顔認識"),
+    SettingSpec("online_learning_min_separation", "オンライン学習 候補差分しきい値", "float", "顔認識"),
+    SettingSpec(
+        "online_learning_min_centroid_similarity",
+        "オンライン学習 重心類似しきい値",
+        "float",
+        "顔認識",
+    ),
+    SettingSpec(
+        "online_learning_duplicate_similarity",
+        "オンライン学習 重複判定しきい値",
+        "float",
+        "顔認識",
+    ),
+    SettingSpec(
+        "online_learning_max_embeddings_per_person_model",
+        "オンライン学習 1人物/モデルの最大ベクトル数",
+        "int",
+        "顔認識",
+    ),
     SettingSpec("faiss_index_path", "FAISS インデックスパス", "str", "顔認識"),
     SettingSpec("photo_storage_dir", "写真保存ディレクトリ", "str", "ストレージ"),
 ]
