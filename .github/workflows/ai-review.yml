@@ -35,18 +35,25 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          # 指摘1: GitHub ActionsはSecretsを自動マスクするが、
-          # ログ出力時にAPIキーが混入しないよう明示的にマスクを追加
           echo "::add-mask::$ANTHROPIC_API_KEY"
 
           TOTAL_CHARS=${{ steps.diff.outputs.TOTAL_CHARS }}
           TOTAL_LINES=${{ steps.diff.outputs.TOTAL_LINES }}
           MAX_CHARS=150000
 
+          # 出力変数を関数でまとめて書き込む（途中書き込みによる残存を防ぐ）
+          write_output() {
+            local review="$1"
+            local approved="$2"
+            echo "REVIEW<<EOF" >> $GITHUB_OUTPUT
+            echo "$review" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "APPROVED=$approved" >> $GITHUB_OUTPUT
+          }
+
           if [ "$TOTAL_CHARS" -gt "$MAX_CHARS" ]; then
             echo "::warning::diff が ${TOTAL_CHARS} 文字あり上限 ${MAX_CHARS} 文字を超えています。"
-            echo "REVIEW=⚠️ diffが大きすぎるためレビューをスキップしました（${TOTAL_LINES}行 / ${TOTAL_CHARS}文字）。手動でレビューしてください。" >> $GITHUB_OUTPUT
-            echo "APPROVED=false" >> $GITHUB_OUTPUT
+            write_output "⚠️ diffが大きすぎるためレビューをスキップしました（${TOTAL_LINES}行 / ${TOTAL_CHARS}文字）。手動でレビューしてください。" "false"
             exit 0
           fi
 
@@ -82,15 +89,11 @@ jobs:
               print('レスポンスのパースに失敗しました')
           ")
             echo "::error::Claude API error (HTTP $HTTP_CODE): $ERROR_MSG"
-            echo "REVIEW=⚠️ Claude API エラー (HTTP $HTTP_CODE): $ERROR_MSG" >> $GITHUB_OUTPUT
-            echo "APPROVED=false" >> $GITHUB_OUTPUT
+            write_output "⚠️ Claude API エラー (HTTP $HTTP_CODE): $ERROR_MSG" "false"
             exit 1
           fi
 
-          # 指摘3: Pythonのexit code確認前にREVIEWのデフォルト値をセットしておく
-          echo "REVIEW=⚠️ レスポンスのパースに失敗しました。ログを確認してください。" >> $GITHUB_OUTPUT
-          echo "APPROVED=false" >> $GITHUB_OUTPUT
-
+          # パース結果をシェル変数に受けてからまとめて書き込む
           REVIEW_TEXT=$(echo "$BODY" | python3 -c "
           import json, sys
           try:
@@ -109,18 +112,15 @@ jobs:
           ")
 
           if [ $? -ne 0 ]; then
+            write_output "⚠️ レスポンスのパースに失敗しました。ログを確認してください。" "false"
             exit 1
           fi
 
-          # パース成功時にREVIEWを上書き
-          echo "REVIEW<<EOF" >> $GITHUB_OUTPUT
-          echo "$REVIEW_TEXT" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
+          # ここで初めてGITHUB_OUTPUTに書き込む（残存値なし）
           if echo "$REVIEW_TEXT" | head -1 | grep -q "LGTM"; then
-            echo "APPROVED=true" >> $GITHUB_OUTPUT
+            write_output "$REVIEW_TEXT" "true"
           else
-            echo "APPROVED=false" >> $GITHUB_OUTPUT
+            write_output "$REVIEW_TEXT" "false"
           fi
 
       - name: Post review comment
@@ -143,7 +143,7 @@ jobs:
       - name: Auto merge if LGTM
         # 一人運用のため、AIレビューのみで自動マージする設計を意図的に採用しています
         # チーム運用に移行する場合は人間のApproveを必須条件に追加してください
-        # 指摘4: マージ取り消し機構は一人運用のため不要と判断（意図的に未実装）
+        # 自動マージの取り消し機構は一人運用のため不要と判断しています（意図的な未実装）
         if: steps.review.outputs.APPROVED == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
