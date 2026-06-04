@@ -6,6 +6,7 @@ from app.models.app_setting import AppSetting
 from app.models.associations import event_persons, person_tags
 from app.models.cooccurrence import PersonCooccurrence
 from app.models.event import Event
+from app.models.face_embedding import FaceEmbedding
 from app.models.face_import import FaceImport
 from app.models.merge_dismissal import MergeDismissal
 from app.models.nickname import Nickname
@@ -20,6 +21,7 @@ __all__ = [
     "AppSetting",
     "Base",
     "Event",
+    "FaceEmbedding",
     "FaceImport",
     "MergeDismissal",
     "Nickname",

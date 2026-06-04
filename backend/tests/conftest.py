@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 import app.models  # noqa: E402,F401  全モデル登録
 from app.db.base import Base, SessionLocal, engine  # noqa: E402
+from app.face.embedder import reset_embedders  # noqa: E402
 from app.face.registry import reset_index  # noqa: E402
 from app.main import app  # noqa: E402
 
@@ -22,16 +23,19 @@ from app.main import app  # noqa: E402
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     reset_index()
+    reset_embedders()
     Base.metadata.create_all(bind=engine)
     with TestClient(app) as c:
         yield c
     Base.metadata.drop_all(bind=engine)
     reset_index()
+    reset_embedders()
 
 
 @pytest.fixture
 def db() -> Iterator["object"]:
     reset_index()
+    reset_embedders()
     Base.metadata.create_all(bind=engine)
     session = SessionLocal()
     try:
@@ -40,3 +44,4 @@ def db() -> Iterator["object"]:
         session.close()
         Base.metadata.drop_all(bind=engine)
         reset_index()
+        reset_embedders()

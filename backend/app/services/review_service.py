@@ -44,7 +44,7 @@ class ReviewService:
     def _criteria(self):
         rc = float(SettingsService(self.db).value("review_confidence") or 0.45)
         return or_(
-            and_(PhotoPerson.person_id.is_(None), PhotoPerson.embedding.is_not(None)),
+            and_(PhotoPerson.person_id.is_(None), PhotoPerson.embeddings.any()),
             and_(PhotoPerson.confidence.is_not(None), PhotoPerson.confidence < rc),
         )
 
@@ -73,8 +73,9 @@ class ReviewService:
         raw: list[tuple[PhotoPerson, list]] = []
         for link in links:
             cands = []
-            if link.embedding:
-                cands = face.match(emb.from_bytes(link.embedding), k=3)
+            embs = {fe.model_key: emb.from_bytes(fe.embedding) for fe in link.embeddings}
+            if embs:
+                cands = face.match(embs, k=3)
             raw.append((link, cands))
             for c in cands:
                 need_ids.add(c.person_id)

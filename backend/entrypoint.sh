@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# DB待機（pg_isready無しでもpsycopg接続リトライ）
 echo "[entrypoint] waiting for database..."
 python - <<'PY'
 import time
@@ -22,7 +21,10 @@ else:
     raise SystemExit("[entrypoint] database unreachable")
 PY
 
-# テーブル作成（冪等）
+echo "[entrypoint] applying migrations..."
+alembic upgrade head
+
+echo "[entrypoint] ensuring tables..."
 python -m app.db_init
 
 exec uvicorn app.main:app --host 0.0.0.0 --port 8017
