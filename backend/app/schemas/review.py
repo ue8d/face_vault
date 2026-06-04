@@ -27,8 +27,12 @@ class ReviewCountOut(BaseModel):
 class MergeSuggestionOut(BaseModel):
     person_a_id: int
     person_a_name: str
+    person_a_photo_id: int | None = None
+    person_a_link_id: int | None = None
     person_b_id: int
     person_b_name: str
+    person_b_photo_id: int | None = None
+    person_b_link_id: int | None = None
     score: float
 
 

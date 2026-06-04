@@ -95,8 +95,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ source_id: sourceId }),
     }),
-  mergeSuggestions: (limit = 20) =>
-    http<MergeSuggestion[]>(`/persons/merge-suggestions?limit=${limit}`),
+  mergeSuggestions: (limit?: number) =>
+    http<MergeSuggestion[]>(
+      `/persons/merge-suggestions${limit != null ? `?limit=${limit}` : ""}`,
+    ),
   dismissMerge: (a: number, b: number) =>
     http<void>(`/persons/merge-suggestions/dismiss`, {
       method: "POST",

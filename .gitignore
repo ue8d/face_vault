@@ -33,3 +33,9 @@ npm-debug.log*
 .DS_Store
 .vscode/
 .idea/
+
+# AI関連
+CLAUDE.md
+AGENTS.md
+.claude/
+.agents/
