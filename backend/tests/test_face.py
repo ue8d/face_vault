@@ -5,12 +5,14 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.face.detector import DetectedFace
+from app.face.embedder import FACE01, INSIGHTFACE
 from app.face.index import VectorIndex
 from app.models.event import Event
 from app.models.person import Person
 from app.models.photo import Photo
 from app.models.photo_person import PhotoPerson
 from app.services.cooccurrence_service import CooccurrenceService
+from app.services.face_backfill_service import FaceBackfillService
 from app.services.face_service import FaceService
 
 DIM = 512
@@ -151,3 +153,99 @@ def test_confirm_face(db: Session) -> None:
 
     cands = svc.match(from_bytes(link.embedding), k=1)
     assert cands and cands[0].person_id == alice.id
+
+
+def test_match_uses_model_specific_margin(db: Session) -> None:
+    alice = _mk_person(db, "Alice")
+    bob = _mk_person(db, "Bob")
+    svc = FaceService(db, VectorIndex(dim=DIM), threshold=0.95)
+    svc._face01_threshold = 0.2
+    svc.register_embedding(alice.id, _unit(10), model_key=INSIGHTFACE)
+    svc.register_embedding(bob.id, _unit(20), model_key=FACE01)
+
+    cands = svc.match({INSIGHTFACE: _unit(10), FACE01: _unit(20)}, k=1)
+
+    assert cands[0].person_id == bob.id
+    assert cands[0].model_key == FACE01
+    assert cands[0].margin > cands[1].margin
+
+
+def test_process_detections_accepts_one_model_over_threshold(db: Session) -> None:
+    alice = _mk_person(db, "Alice")
+    svc = FaceService(db, VectorIndex(dim=DIM), threshold=0.99)
+    svc._face01_threshold = 0.2
+    svc.register_embedding(alice.id, _unit(10), model_key=FACE01)
+    photo = Photo(path="p.jpg")
+    db.add(photo)
+    db.flush()
+    face = DetectedFace(
+        bbox=(0, 0, 100, 100),
+        embeddings={INSIGHTFACE: _unit(20), FACE01: _unit(10)},
+    )
+
+    links = svc.process_detections(photo, [face], auto_enroll=False)
+
+    assert links[0].person_id == alice.id
+
+
+def test_process_detections_leaves_unmatched_when_all_margins_negative(
+    db: Session,
+) -> None:
+    alice = _mk_person(db, "Alice")
+    svc = FaceService(db, VectorIndex(dim=DIM), threshold=0.99)
+    svc._face01_threshold = 0.99
+    svc.register_embedding(alice.id, _unit(10), model_key=INSIGHTFACE)
+    svc.register_embedding(alice.id, _unit(20), model_key=FACE01)
+    photo = Photo(path="p.jpg")
+    db.add(photo)
+    db.flush()
+    face = DetectedFace(
+        bbox=(0, 0, 100, 100),
+        embeddings={INSIGHTFACE: _unit(30), FACE01: _unit(40)},
+    )
+
+    links = svc.process_detections(photo, [face], auto_enroll=False)
+
+    assert links[0].person_id is None
+
+
+def test_face01_backfill_creates_face_and_person_embeddings(db: Session, tmp_path) -> None:
+    import cv2
+    from sqlalchemy import func, select
+
+    from app.models.face_embedding import FaceEmbedding
+    from app.models.person_embedding import PersonEmbedding
+
+    class FakeFace01:
+        model_key = FACE01
+        dim = DIM
+
+        def embed(self, img_bgr, bbox, *, landmarks=None):
+            return _unit(77)
+
+    person = _mk_person(db, "Alice")
+    image_path = tmp_path / "p.jpg"
+    cv2.imwrite(str(image_path), np.full((32, 32, 3), 128, dtype="uint8"))
+    photo = Photo(path=image_path.name)
+    db.add(photo)
+    db.flush()
+    link = PhotoPerson(photo_id=photo.id, person_id=person.id, bbox="0,0,20,20")
+    db.add(link)
+    db.flush()
+
+    svc = FaceBackfillService(db, embedder=FakeFace01(), storage_dir=tmp_path)
+    result = svc.backfill_face01()
+    db.flush()
+
+    assert result.scanned == 1
+    assert result.face_embeddings_created == 1
+    assert result.person_embeddings_created == 1
+    assert db.scalar(select(func.count(FaceEmbedding.id))) == 1
+    assert db.scalar(
+        select(func.count(PersonEmbedding.id)).where(
+            PersonEmbedding.model_key == FACE01
+        )
+    ) == 1
+
+    second = svc.backfill_face01()
+    assert second.skipped == 1

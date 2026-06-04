@@ -26,3 +26,11 @@ class PhotoPersonOut(ORMModel):
 class ReindexResponse(BaseModel):
     backend: str
     size: int
+
+
+class FaceBackfillResponse(BaseModel):
+    scanned: int
+    face_embeddings_created: int
+    person_embeddings_created: int
+    skipped: int
+    failed: int

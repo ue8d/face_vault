@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.face import embedding as emb
+from app.face.embedder import INSIGHTFACE
 from app.face.index import VectorIndex
 from app.models.merge_dismissal import MergeDismissal
 from app.models.person import Person
@@ -43,8 +44,10 @@ class MergeSuggestService:
         if threshold is None:
             threshold = float(SettingsService(self.db).value("merge_suggest_threshold") or 0.5)
 
+        # insightface 空間のみで比較（モデル間は別空間のため混在不可）。
         rows = self.db.execute(
             select(PersonEmbedding.id, PersonEmbedding.person_id, PersonEmbedding.embedding)
+            .where(PersonEmbedding.model_key == INSIGHTFACE)
         ).all()
         emb_person = {eid: pid for eid, pid, _ in rows}
 

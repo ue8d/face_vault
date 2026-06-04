@@ -1,4 +1,4 @@
-"""顔エンドポイント。再インデックス・候補照合・手動確定・人物顔登録。"""
+"""Face recognition endpoints."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
@@ -11,9 +11,11 @@ from app.models.photo_person import PhotoPerson
 from app.schemas.face import (
     CandidateOut,
     ConfirmFaceRequest,
+    FaceBackfillResponse,
     PhotoPersonOut,
     ReindexResponse,
 )
+from app.services.face_backfill_service import FaceBackfillService
 from app.services.face_service import FaceService
 
 router = APIRouter()
@@ -25,16 +27,35 @@ def _face_service(db: Session = Depends(get_db)) -> FaceService:
 
 @router.post("/faces/reindex", response_model=ReindexResponse)
 def reindex(svc: FaceService = Depends(_face_service)):
-    """person_embeddings から VectorIndex を再構築。"""
     size = svc.rebuild_index()
     return ReindexResponse(backend=svc.index.backend, size=size)
+
+
+@router.post("/faces/backfill/face01", response_model=FaceBackfillResponse)
+def backfill_face01(
+    limit: int | None = None,
+    svc: FaceService = Depends(_face_service),
+):
+    try:
+        result = FaceBackfillService(svc.db).backfill_face01(limit=limit)
+        svc.db.commit()
+        if result.person_embeddings_created:
+            svc.rebuild_index()
+        return FaceBackfillResponse(**result.__dict__)
+    except RuntimeError as e:
+        svc.db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    except (ImportError, ModuleNotFoundError, FileNotFoundError) as e:
+        svc.db.rollback()
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "face01 runtime unavailable"
+        ) from e
 
 
 @router.patch("/faces/links/{link_id}", response_model=PhotoPersonOut)
 def confirm_face(
     link_id: int, req: ConfirmFaceRequest, svc: FaceService = Depends(_face_service)
 ):
-    """検出顔(photo_person)を人物に確定。"""
     link = svc.db.get(PhotoPerson, link_id)
     if link is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "face link not found")
@@ -46,7 +67,6 @@ def confirm_face(
 
 @router.delete("/faces/links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_face_link(link_id: int, svc: FaceService = Depends(_face_service)) -> Response:
-    """検出顔リンクを削除（誤検出/重複の対象外化）。割当済みなら共起も減算。"""
     link = svc.db.get(PhotoPerson, link_id)
     if link is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "face link not found")
@@ -60,8 +80,8 @@ def delete_face_link(link_id: int, svc: FaceService = Depends(_face_service)) ->
                 PhotoPerson.id != link.id,
             )
         ).scalars().all()
-        for o in set(others):
-            CooccurrenceService(svc.db).bump_pairs([link.person_id, o], delta=-1)
+        for other in set(others):
+            CooccurrenceService(svc.db).bump_pairs([link.person_id, other], delta=-1)
     svc.db.delete(link)
     svc.db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -73,11 +93,6 @@ async def register_person_face(
     file: UploadFile = File(...),
     svc: FaceService = Depends(_face_service),
 ):
-    """人物の参照顔写真を登録（検出器で1顔抽出→Embedding登録）。
-
-    元画像も保存し、その写真を本人の確定済み顔として紐付ける。
-    顔認識ランタイム未導入時は 503。
-    """
     content = await file.read()
     try:
         from app.face.detector import get_detector

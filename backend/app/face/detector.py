@@ -5,17 +5,32 @@ InsightFace/onnxruntime/opencv はインポートが重く環境依存。遅延�
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import logging
+from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
 import numpy as np
+
+from app.face.embedder import INSIGHTFACE
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class DetectedFace:
     bbox: tuple[int, int, int, int]  # x, y, w, h
-    embedding: np.ndarray  # 512次元 float32
+    # 後方互換: 単数 embedding は insightface 埋め込みの別名（__post_init__ で同期）
+    embedding: np.ndarray | None = None
     det_score: float = 1.0
+    landmarks: np.ndarray | None = None  # 5-point landmarks from detector, if available
+    # model_key → 埋め込み。マルチモデルの正本
+    embeddings: dict[str, np.ndarray] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.embedding is not None and INSIGHTFACE not in self.embeddings:
+            self.embeddings[INSIGHTFACE] = self.embedding
+        elif self.embedding is None and INSIGHTFACE in self.embeddings:
+            self.embedding = self.embeddings[INSIGHTFACE]
 
 
 @runtime_checkable
@@ -86,14 +101,32 @@ class InsightFaceDetector:
         if img is None:
             return []
         faces = self._app.get(img)  # type: ignore[union-attr]
+        from app.face.embedder import get_crop_embedders
+
+        crop_embedders = get_crop_embedders()
         out: list[DetectedFace] = []
         for f in faces:
             x1, y1, x2, y2 = (int(v) for v in f.bbox)
+            bbox = (x1, y1, x2 - x1, y2 - y1)
+            embeddings = {INSIGHTFACE: np.asarray(f.normed_embedding, dtype="float32")}
+            kps = getattr(f, "kps", None)
+            landmarks = (
+                np.asarray(kps, dtype="float32") if kps is not None else None
+            )
+            # 追加モデル（Face01等）は同じbboxを各自で埋め込む。検出は1回のみ。
+            for ce in crop_embedders:
+                try:
+                    embeddings[ce.model_key] = ce.embed(
+                        img, bbox, landmarks=landmarks
+                    )
+                except Exception:  # noqa: BLE001 - 1モデル失敗で他モデルは止めない
+                    logger.warning("embedder %s failed", ce.model_key, exc_info=True)
             out.append(
                 DetectedFace(
-                    bbox=(x1, y1, x2 - x1, y2 - y1),
-                    embedding=np.asarray(f.normed_embedding, dtype="float32"),
+                    bbox=bbox,
+                    embeddings=embeddings,
                     det_score=float(getattr(f, "det_score", 1.0)),
+                    landmarks=landmarks,
                 )
             )
         return out

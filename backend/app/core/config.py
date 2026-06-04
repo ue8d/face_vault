@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     auto_enroll_faces: bool = True
     faiss_index_path: str = "/data/faiss/index.bin"
 
+    # Face01 / JAPANESE FACE v1（日本人特化・EfficientNetV2+ArcFace）並行モデル
+    face01_enabled: bool = False
+    face01_model_path: str = "/data/models/JAPANESE_FACE_V1.onnx"
+    face01_input_size: int = 224
+    face01_dim: int = 512  # onnx出力次元（index構築用。Embedderロード時に実値で上書き）
+    # Face01空間でのコサイン類似 本人判定閾値（マージン正規化の基準。要実データ調整）
+    face01_threshold: float = 0.4
+
     # ストレージ
     photo_storage_dir: str = "/data/photos"
 
