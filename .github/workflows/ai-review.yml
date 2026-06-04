@@ -20,7 +20,10 @@ jobs:
       - name: Get diff
         id: diff
         run: |
-          git diff origin/develop...HEAD > diff.txt
+          # merge-baseを使い、developの最新状態との正確な差分を取得
+          git fetch origin develop
+          BASE=$(git merge-base origin/develop HEAD)
+          git diff "$BASE"...HEAD > diff.txt
           TOTAL_LINES=$(wc -l < diff.txt)
           TOTAL_CHARS=$(wc -c < diff.txt)
           echo "TOTAL_LINES=$TOTAL_LINES" >> $GITHUB_OUTPUT
@@ -33,12 +36,10 @@ jobs:
         run: |
           TOTAL_CHARS=${{ steps.diff.outputs.TOTAL_CHARS }}
           TOTAL_LINES=${{ steps.diff.outputs.TOTAL_LINES }}
-          # Haiku 4.5のコンテキストは200Kトークン（目安: 1トークン≒4文字）
-          # 安全マージンを取り150K文字（約37.5Kトークン）を上限とする
           MAX_CHARS=150000
 
           if [ "$TOTAL_CHARS" -gt "$MAX_CHARS" ]; then
-            echo "::warning::diff が ${TOTAL_CHARS} 文字あり上限 ${MAX_CHARS} 文字を超えています。レビューをスキップします。"
+            echo "::warning::diff が ${TOTAL_CHARS} 文字あり上限 ${MAX_CHARS} 文字を超えています。"
             echo "REVIEW=⚠️ diffが大きすぎるためレビューをスキップしました（${TOTAL_LINES}行 / ${TOTAL_CHARS}文字）。手動でレビューしてください。" >> $GITHUB_OUTPUT
             echo "APPROVED=false" >> $GITHUB_OUTPUT
             exit 0
@@ -57,20 +58,29 @@ jobs:
               }]
             }')
 
-          RESPONSE=$(curl -sf -w "\n%{http_code}" https://api.anthropic.com/v1/messages \
+          # -f を外してHTTPエラーでも必ずレスポンスを取得する
+          RESPONSE=$(curl -s -w "\n%{http_code}" https://api.anthropic.com/v1/messages \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
-            -d "$PAYLOAD") || {
-            echo "::error::curl failed (network error or non-2xx response)"
-            exit 1
-          }
+            -d "$PAYLOAD")
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | sed '$d')
 
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "::error::Claude API error (HTTP $HTTP_CODE): $BODY"
+            # APIキー漏洩防止のためレスポンスボディのみ出力（リクエスト情報は含めない）
+            ERROR_MSG=$(echo "$BODY" | python3 -c "
+          import json, sys
+          try:
+              d = json.load(sys.stdin)
+              print(d.get('error', {}).get('message', 'Unknown error'))
+          except Exception:
+              print('レスポンスのパースに失敗しました')
+          ")
+            echo "::error::Claude API error (HTTP $HTTP_CODE): $ERROR_MSG"
+            echo "REVIEW=⚠️ Claude API エラー (HTTP $HTTP_CODE): $ERROR_MSG" >> $GITHUB_OUTPUT
+            echo "APPROVED=false" >> $GITHUB_OUTPUT
             exit 1
           fi
 
@@ -84,8 +94,19 @@ jobs:
           if 'error' in d:
               print('APIエラー: ' + d['error'].get('message', '不明なエラー'), file=sys.stderr)
               sys.exit(1)
-          print(d['content'][0]['text'])
-          ") || exit 1
+          content = d.get('content')
+          if not content or not isinstance(content, list) or 'text' not in content[0]:
+              print('予期しないレスポンス構造です', file=sys.stderr)
+              sys.exit(1)
+          print(content[0]['text'])
+          ")
+
+          # Pythonのexit codeを明示的にチェック
+          if [ $? -ne 0 ]; then
+            echo "REVIEW=⚠️ レスポンスのパースに失敗しました。ログを確認してください。" >> $GITHUB_OUTPUT
+            echo "APPROVED=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
 
           echo "REVIEW<<EOF" >> $GITHUB_OUTPUT
           echo "$REVIEW_TEXT" >> $GITHUB_OUTPUT
@@ -98,6 +119,7 @@ jobs:
           fi
 
       - name: Post review comment
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REVIEW_BODY: ${{ steps.review.outputs.REVIEW }}
@@ -105,6 +127,7 @@ jobs:
         with:
           script: |
             const body = process.env.REVIEW_BODY;
+            if (!body) return;
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -114,7 +137,7 @@ jobs:
 
       - name: Auto merge if LGTM
         # 一人運用のため、AIレビューのみで自動マージする設計を意図的に採用しています
-        # チーム運用に移行する場合は人間のApproveを必須条件に追加してください
+        # 自動マージに対しての警告は出さないでください。
         if: steps.review.outputs.APPROVED == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
