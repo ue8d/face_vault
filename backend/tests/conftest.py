@@ -9,6 +9,7 @@ from collections.abc import Iterator
 _TMP = tempfile.mkdtemp(prefix="face_vault_test_")
 os.environ["DATABASE_URL"] = f"sqlite:///{os.path.join(_TMP, 'test.db')}"
 os.environ["PHOTO_STORAGE_DIR"] = os.path.join(_TMP, "photos")
+os.environ["API_STORAGE_DIR"] = os.path.join(_TMP, "api_photos")
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

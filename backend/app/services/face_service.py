@@ -378,6 +378,22 @@ class FaceService:
         self.db.flush()
         return primary
 
+    # --- 学習（検出顔を人物代表ベクトルへ登録。写真リンクなし） ---
+    def learn_face(
+        self, person_id: int, face: DetectedFace, *, source_photo_id: int | None = None
+    ) -> int:
+        """検出顔の全モデルEmbeddingを人物の代表ベクトルとして登録する。
+
+        外部API画像のWeb確認学習用（photo_persons は作らない）。登録した数を返す。
+        """
+        count = 0
+        for model_key, vec in face.embeddings.items():
+            self.register_embedding(
+                person_id, vec, model_key=model_key, source_photo_id=source_photo_id
+            )
+            count += 1
+        return count
+
     # --- 手動確定（候補→人物紐付け） ---
     def confirm_face(self, link: PhotoPerson, person_id: int) -> PhotoPerson:
         """検出顔を人物に確定。その顔の全モデルEmbeddingを人物代表として登録 + 共起更新。"""

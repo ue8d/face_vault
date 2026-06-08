@@ -1,4 +1,5 @@
 import type {
+  ApiQuery,
   EventItem,
   IdentifyResponse,
   Person,
@@ -46,6 +47,8 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
 export const photoRawUrl = (id: number) => `${API_BASE}/photos/${id}/raw`;
 export const faceCropUrl = (photoId: number, linkId: number) =>
   `${API_BASE}/photos/${photoId}/faces/${linkId}/crop`;
+export const apiQueryRawUrl = (id: number) => `${API_BASE}/api-queries/${id}/raw`;
+export const apiQueryCropUrl = (id: number) => `${API_BASE}/api-queries/${id}/crop`;
 
 type PersonListParams = {
   q?: string;
@@ -147,6 +150,19 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  // external API queries (受信画像ログ)
+  listApiQueries: (params: Record<string, string | number | undefined> = {}) => {
+    const query = qs(params);
+    return http<ApiQuery[]>(`/api-queries${query ? `?${query}` : ""}`);
+  },
+  learnApiQuery: (id: number, personId: number, faceIndex = 0) =>
+    http<ApiQuery>(`/api-queries/${id}/learn`, {
+      method: "POST",
+      body: JSON.stringify({ person_id: personId, face_index: faceIndex }),
+    }),
+  deleteApiQuery: (id: number) =>
+    http<void>(`/api-queries/${id}`, { method: "DELETE" }),
 
   // faces
   confirmFace: (linkId: number, personId: number) =>

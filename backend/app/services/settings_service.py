@@ -66,6 +66,9 @@ SPECS: list[SettingSpec] = [
     ),
     SettingSpec("faiss_index_path", "FAISS インデックスパス", "str", "顔認識"),
     SettingSpec("photo_storage_dir", "写真保存ディレクトリ", "str", "ストレージ"),
+    SettingSpec("api_storage_dir", "外部API画像 保存ディレクトリ", "str", "ストレージ"),
+    SettingSpec("api_key", "外部API キー（X-API-Key）", "secret", "外部API"),
+    SettingSpec("api_identify_top_n", "外部API 返却候補数（各顔）", "int", "外部API"),
 ]
 SPEC_BY_KEY = {s.key: s for s in SPECS}
 
