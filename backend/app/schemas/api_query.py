@@ -29,7 +29,14 @@ class ApiQueryOut(ORMModel):
     faces_detected: int
     result: list[ApiFaceResult] = []
     note: str | None = None
+    learned_person_id: int | None = None
+    learned_person_name: str | None = None
     created_at: datetime
+
+
+class ApiLearnRequest(BaseModel):
+    person_id: int
+    face_index: int = 0
 
 
 class ApiIdentifyResponse(BaseModel):

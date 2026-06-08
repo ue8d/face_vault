@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import JSON, Integer, String, Text
+from sqlalchemy import JSON, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin
@@ -25,3 +25,7 @@ class ApiQuery(Base, TimestampMixin):
     result: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
     # 呼び出し元の任意ラベル（外部システム識別用・任意）
     note: Mapped[str | None] = mapped_column(Text)
+    # Web確認で「この人物で正しい」と学習させた人物（任意・未学習はNULL）
+    learned_person_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persons.id", ondelete="SET NULL")
+    )

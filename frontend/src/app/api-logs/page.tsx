@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Trash2, Webhook } from "lucide-react";
+import { GraduationCap, Trash2, Webhook } from "lucide-react";
 import { api, apiQueryCropUrl, apiQueryRawUrl } from "@/lib/api";
 import type { ApiQuery } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,20 @@ export default function ApiLogsPage() {
     try {
       await api.deleteApiQuery(id);
       setItems((prev) => prev.filter((it) => it.id !== id));
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const learn = async (id: number, personId: number, name: string, faceIndex: number) => {
+    if (!confirm(`この顔を「${name}」として学習しますか？`)) return;
+    setBusyId(id);
+    setErr(null);
+    try {
+      const updated = await api.learnApiQuery(id, personId, faceIndex);
+      setItems((prev) => prev.map((it) => (it.id === id ? updated : it)));
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -95,6 +109,12 @@ export default function ApiLogsPage() {
                   </Button>
                 </div>
                 {q.note && <p className="truncate text-xs text-muted-foreground">{q.note}</p>}
+                {q.learned_person_id && (
+                  <Badge variant="secondary" className="w-fit gap-1">
+                    <GraduationCap className="h-3 w-3" />
+                    学習済み: {q.learned_person_name ?? `#${q.learned_person_id}`}
+                  </Badge>
+                )}
                 <div className="space-y-1.5">
                   {q.result.length === 0 && (
                     <p className="text-xs text-muted-foreground">顔未検出</p>
@@ -102,7 +122,10 @@ export default function ApiLogsPage() {
                   {q.result.map((face, i) => {
                     const top = face.candidates[0];
                     return (
-                      <div key={i} className="rounded-md border px-2 py-1 text-xs">
+                      <div
+                        key={i}
+                        className="flex items-center justify-between gap-2 rounded-md border px-2 py-1 text-xs"
+                      >
                         {top ? (
                           <span className={top.matched ? "font-medium" : "text-muted-foreground"}>
                             {top.matched ? top.name : `未一致（最有力: ${top.name}）`}
@@ -112,6 +135,17 @@ export default function ApiLogsPage() {
                           </span>
                         ) : (
                           <span className="text-muted-foreground">候補なし</span>
+                        )}
+                        {top && !q.learned_person_id && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 shrink-0 px-2 text-xs"
+                            disabled={busyId === q.id}
+                            onClick={() => learn(q.id, top.person_id, top.name, i)}
+                          >
+                            学習
+                          </Button>
                         )}
                       </div>
                     );

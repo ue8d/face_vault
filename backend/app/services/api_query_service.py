@@ -102,6 +102,42 @@ class ApiQueryService:
         self.db.refresh(row)
         return row
 
+    # --- 学習（Web確認 → 人物代表ベクトルへ登録） ---
+    def learn(self, row: ApiQuery, *, person_id: int, face_index: int = 0) -> ApiQuery:
+        """受信画像の指定顔を person_id の代表ベクトルとして学習する。
+
+        画像を再検出し、result と同順の face_index の顔を登録（DBに人物ベクトル追加）。
+        検出器が必要（未導入時 ImportError → 呼び出し側で503）。
+        """
+        from app.face.detector import get_detector
+        from app.face.registry import get_index
+        from app.services.face_service import FaceService
+
+        if self.db.get(Person, person_id) is None:
+            raise LookupError("person not found")
+
+        fpath = self.file_path(row)
+        if not fpath.exists():
+            raise FileNotFoundError(row.path)
+
+        faces = get_detector().detect(fpath.read_bytes())
+        if not faces or face_index < 0 or face_index >= len(faces):
+            raise ValueError("face not found")
+
+        FaceService(self.db, get_index()).learn_face(person_id, faces[face_index])
+        row.learned_person_id = person_id
+        self.db.commit()
+        self.db.refresh(row)
+        self._attach_learned_name(row)
+        return row
+
+    def _attach_learned_name(self, row: ApiQuery) -> None:
+        if row.learned_person_id is None:
+            row.learned_person_name = None  # type: ignore[attr-defined]
+            return
+        name = self._names_for([row.learned_person_id]).get(row.learned_person_id)
+        row.learned_person_name = name  # type: ignore[attr-defined]
+
     def _names_for(self, person_ids: list[int]) -> dict[int, str]:
         ids = [pid for pid in set(person_ids) if pid is not None]
         if not ids:
@@ -119,10 +155,19 @@ class ApiQueryService:
             .limit(limit)
             .offset(offset)
         )
-        return list(self.db.scalars(stmt).all())
+        rows = list(self.db.scalars(stmt).all())
+        names = self._names_for([r.learned_person_id for r in rows if r.learned_person_id])
+        for r in rows:
+            r.learned_person_name = (  # type: ignore[attr-defined]
+                names.get(r.learned_person_id) if r.learned_person_id else None
+            )
+        return rows
 
     def get(self, query_id: int) -> ApiQuery | None:
-        return self.db.get(ApiQuery, query_id)
+        row = self.db.get(ApiQuery, query_id)
+        if row is not None:
+            self._attach_learned_name(row)
+        return row
 
     def file_path(self, row: ApiQuery) -> Path:
         return self.storage / row.path

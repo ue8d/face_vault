@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.db.base import get_db
-from app.schemas.api_query import ApiIdentifyResponse, ApiQueryOut
+from app.schemas.api_query import ApiIdentifyResponse, ApiLearnRequest, ApiQueryOut
 from app.services.api_query_service import ApiQueryService
 from app.services.settings_service import SettingsService
 
@@ -124,6 +124,30 @@ def get_api_query_crop(query_id: int, svc: ApiQueryService = Depends(_service)):
     buf = BytesIO()
     img.save(buf, "JPEG", quality=85)
     return Response(content=buf.getvalue(), media_type="image/jpeg")
+
+
+@router.post("/api-queries/{query_id}/learn", response_model=ApiQueryOut, tags=["external-api"])
+def learn_api_query(
+    query_id: int,
+    req: ApiLearnRequest,
+    svc: ApiQueryService = Depends(_service),
+):
+    """Web確認で正しいと判断した顔を、指定人物の代表ベクトルとして学習する。"""
+    row = svc.get(query_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "api query not found")
+    try:
+        return svc.learn(row, person_id=req.person_id, face_index=req.face_index)
+    except LookupError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "person not found") from e
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from e
+    except FileNotFoundError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "file missing") from e
+    except (ImportError, ModuleNotFoundError) as e:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "face runtime unavailable"
+        ) from e
 
 
 @router.delete("/api-queries/{query_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["external-api"])

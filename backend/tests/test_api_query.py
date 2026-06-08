@@ -48,6 +48,50 @@ def test_identify_missing_key_header_rejected(client: TestClient) -> None:
     assert r.status_code == 401
 
 
+def test_learn_missing_query_returns_404(client: TestClient) -> None:
+    r = client.post("/api-queries/999/learn", json={"person_id": 1})
+    assert r.status_code == 404
+
+
+def test_learn_records_person_and_registers_vectors(db, monkeypatch) -> None:
+    """学習でapi_queryにlearned_person_idが付き、人物代表ベクトルが増える。"""
+    from pathlib import Path
+
+    import numpy as np
+
+    import app.face.detector as det
+    from app.face.detector import DetectedFace
+    from app.models.api_query import ApiQuery
+    from app.models.person import Person
+    from app.models.person_embedding import PersonEmbedding
+    from app.services.api_query_service import ApiQueryService
+
+    person = Person(name="学習対象")
+    db.add(person)
+    db.flush()
+    row = ApiQuery(path="x.webp", faces_detected=1, result=[{"bbox": [0, 0, 10, 10]}])
+    db.add(row)
+    db.commit()
+
+    face = DetectedFace(
+        bbox=(0, 0, 10, 10),
+        det_score=0.9,
+        embeddings={"insightface": np.ones(512, dtype="float32")},
+    )
+    monkeypatch.setattr(det, "get_detector", lambda: type("D", (), {"detect": lambda self, b: [face]})())
+
+    svc = ApiQueryService(db)
+    monkeypatch.setattr(svc, "file_path", lambda r: Path(__file__))  # 存在するファイル
+
+    before = db.query(PersonEmbedding).filter_by(person_id=person.id).count()
+    updated = svc.learn(row, person_id=person.id, face_index=0)
+    after = db.query(PersonEmbedding).filter_by(person_id=person.id).count()
+
+    assert updated.learned_person_id == person.id
+    assert updated.learned_person_name == "学習対象"
+    assert after == before + 1
+
+
 def test_storage_dir_honors_db_override(db) -> None:
     """api_storage_dir のDB設定変更がサービスの保存先に反映される。"""
     from pathlib import Path

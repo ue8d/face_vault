@@ -94,6 +94,8 @@ export interface ApiQuery {
   faces_detected: number;
   result: ApiFaceResult[];
   note: string | null;
+  learned_person_id: number | null;
+  learned_person_name: string | null;
   created_at: string;
 }
 

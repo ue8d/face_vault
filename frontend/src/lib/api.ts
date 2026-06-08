@@ -156,6 +156,11 @@ export const api = {
     const query = qs(params);
     return http<ApiQuery[]>(`/api-queries${query ? `?${query}` : ""}`);
   },
+  learnApiQuery: (id: number, personId: number, faceIndex = 0) =>
+    http<ApiQuery>(`/api-queries/${id}/learn`, {
+      method: "POST",
+      body: JSON.stringify({ person_id: personId, face_index: faceIndex }),
+    }),
   deleteApiQuery: (id: number) =>
     http<void>(`/api-queries/${id}`, { method: "DELETE" }),
 
