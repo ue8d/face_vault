@@ -93,6 +93,39 @@ def get_api_query_raw(query_id: int, svc: ApiQueryService = Depends(_service)):
     return FileResponse(fpath)
 
 
+@router.get("/api-queries/{query_id}/crop", tags=["external-api"])
+def get_api_query_crop(query_id: int, svc: ApiQueryService = Depends(_service)):
+    """最初の検出顔のbboxで切り抜いた画像を返す（顔未検出時は全体）。プレビュー用。"""
+    from io import BytesIO
+
+    from PIL import Image
+
+    row = svc.get(query_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "api query not found")
+    fpath: Path = svc.file_path(row)
+    if not fpath.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "file missing")
+
+    img = Image.open(fpath).convert("RGB")
+    faces = row.result or []
+    bbox = faces[0].get("bbox") if faces else None
+    if bbox and len(bbox) == 4:
+        x, y, w, h = (int(v) for v in bbox)
+        pad = int(max(w, h) * 0.4)
+        img = img.crop(
+            (
+                max(0, x - pad),
+                max(0, y - pad),
+                min(img.width, x + w + pad),
+                min(img.height, y + h + pad),
+            )
+        )
+    buf = BytesIO()
+    img.save(buf, "JPEG", quality=85)
+    return Response(content=buf.getvalue(), media_type="image/jpeg")
+
+
 @router.delete("/api-queries/{query_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["external-api"])
 def delete_api_query(query_id: int, svc: ApiQueryService = Depends(_service)) -> Response:
     row = svc.get(query_id)

@@ -48,6 +48,7 @@ export const photoRawUrl = (id: number) => `${API_BASE}/photos/${id}/raw`;
 export const faceCropUrl = (photoId: number, linkId: number) =>
   `${API_BASE}/photos/${photoId}/faces/${linkId}/crop`;
 export const apiQueryRawUrl = (id: number) => `${API_BASE}/api-queries/${id}/raw`;
+export const apiQueryCropUrl = (id: number) => `${API_BASE}/api-queries/${id}/crop`;
 
 type PersonListParams = {
   q?: string;

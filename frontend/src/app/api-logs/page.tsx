@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Trash2, Webhook } from "lucide-react";
-import { api, apiQueryRawUrl } from "@/lib/api";
+import { api, apiQueryCropUrl } from "@/lib/api";
 import type { ApiQuery } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -66,7 +66,7 @@ export default function ApiLogsPage() {
               <div className="relative aspect-video overflow-hidden bg-muted">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={apiQueryRawUrl(q.id)}
+                  src={apiQueryCropUrl(q.id)}
                   alt={`api query ${q.id}`}
                   className="h-full w-full object-cover"
                   onError={(e) => (e.currentTarget.style.display = "none")}
