@@ -52,5 +52,11 @@ class PhotoRepository(BaseRepository[Photo]):
             stmt = stmt.where(extract("year", Photo.taken_at) == f.year)
         if f.month is not None:
             stmt = stmt.where(extract("month", Photo.taken_at) == f.month)
-        stmt = stmt.order_by(Photo.taken_at.desc().nullslast()).limit(limit).offset(offset)
+        # 登録日時(created_at)降順 — 新規追加が常に先頭。
+        # taken_at順だと古いEXIF日時の写真が下位に沈み「追加したのに一覧に出ない」ため。
+        stmt = (
+            stmt.order_by(Photo.created_at.desc(), Photo.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         return list(self.db.scalars(stmt).unique().all())
