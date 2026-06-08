@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Trash2, Webhook } from "lucide-react";
-import { api, apiQueryCropUrl } from "@/lib/api";
+import { api, apiQueryCropUrl, apiQueryRawUrl } from "@/lib/api";
 import type { ApiQuery } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Dialog } from "@/components/ui/dialog";
 import { LoadingState } from "@/components/ui/loading-state";
 import { fmtDate } from "@/lib/utils";
 
@@ -13,6 +14,7 @@ export default function ApiLogsPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [previewId, setPreviewId] = useState<number | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -63,18 +65,23 @@ export default function ApiLogsPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((q) => (
             <div key={q.id} className="flex flex-col overflow-hidden rounded-lg border bg-card">
-              <div className="relative aspect-video overflow-hidden bg-muted">
+              <button
+                type="button"
+                onClick={() => setPreviewId(q.id)}
+                className="relative aspect-video overflow-hidden bg-muted"
+                title="クリックで全体表示"
+              >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={apiQueryCropUrl(q.id)}
                   alt={`api query ${q.id}`}
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-cover transition-transform hover:scale-105"
                   onError={(e) => (e.currentTarget.style.display = "none")}
                 />
                 <Badge className="absolute right-1 top-1" variant="secondary">
                   顔{q.faces_detected}
                 </Badge>
-              </div>
+              </button>
               <div className="flex flex-1 flex-col gap-2 p-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-muted-foreground">{fmtDate(q.created_at)}</span>
@@ -115,6 +122,21 @@ export default function ApiLogsPage() {
           ))}
         </div>
       )}
+
+      <Dialog
+        open={previewId !== null}
+        onClose={() => setPreviewId(null)}
+        className="max-w-4xl p-2"
+      >
+        {previewId !== null && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={apiQueryRawUrl(previewId)}
+            alt={`api query ${previewId} full`}
+            className="mx-auto max-h-[85vh] w-auto rounded-md object-contain"
+          />
+        )}
+      </Dialog>
     </div>
   );
 }
