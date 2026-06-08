@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from app.db.base import Base
+from app.models.api_query import ApiQuery
 from app.models.app_setting import AppSetting
 from app.models.associations import event_persons, person_tags
 from app.models.cooccurrence import PersonCooccurrence
@@ -18,6 +19,7 @@ from app.models.photo_person import PhotoPerson
 from app.models.tag import Tag
 
 __all__ = [
+    "ApiQuery",
     "AppSetting",
     "Base",
     "Event",

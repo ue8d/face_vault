@@ -73,6 +73,30 @@ export interface IdentifyResponse {
   answer: string;
 }
 
+export interface ApiCandidate {
+  person_id: number;
+  name: string;
+  score: number;
+  margin: number;
+  model_key: string;
+  matched: boolean;
+}
+
+export interface ApiFaceResult {
+  bbox: number[];
+  det_score: number;
+  candidates: ApiCandidate[];
+}
+
+export interface ApiQuery {
+  id: number;
+  path: string;
+  faces_detected: number;
+  result: ApiFaceResult[];
+  note: string | null;
+  created_at: string;
+}
+
 export interface SettingItem {
   key: string;
   label: string;

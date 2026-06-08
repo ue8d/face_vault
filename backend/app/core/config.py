@@ -68,6 +68,12 @@ class Settings(BaseSettings):
 
     # ストレージ
     photo_storage_dir: str = "/data/photos"
+    # 外部API経由で受け取った画像の保存先（写真ライブラリとは別フォルダ）
+    api_storage_dir: str = "/data/api_photos"
+
+    # 外部API（顔判定のみ・学習なし）
+    api_key: str | None = None  # X-API-Key 照合用。DB設定で発行（未設定なら無効）
+    api_identify_top_n: int = 5  # 各顔につき返す候補数
 
     # AI プロバイダ抽象化
     ai_provider: str = "anthropic"  # openai | anthropic | gemini
