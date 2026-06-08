@@ -84,6 +84,32 @@ export default function PhotosPage() {
                     顔{p.person_links.length}
                   </Badge>
                 )}
+                {(() => {
+                  const named = p.person_links.filter((l) => l.person_name);
+                  if (named.length === 0) return null;
+                  return (
+                    <div className="absolute bottom-1 left-1 flex max-w-[90%] flex-col gap-0.5">
+                      {named.slice(0, 2).map((l) => (
+                        <span
+                          key={l.id}
+                          className="truncate rounded bg-black/60 px-1 py-0.5 text-[10px] leading-tight text-white"
+                        >
+                          {l.person_name}
+                          {l.confidence != null && (
+                            <span className="ml-1 opacity-80">
+                              {(l.confidence * 100).toFixed(0)}%
+                            </span>
+                          )}
+                        </span>
+                      ))}
+                      {named.length > 2 && (
+                        <span className="rounded bg-black/60 px-1 py-0.5 text-[10px] leading-tight text-white">
+                          +{named.length - 2}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
               <p className="mt-1 truncate text-xs text-muted-foreground">{fmtDate(p.taken_at)}</p>
             </Link>
