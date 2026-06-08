@@ -30,6 +30,27 @@ function fromDateTimeLocal(value: string) {
   return date.toISOString();
 }
 
+function parseBbox(value: string | null): { x: number; y: number; w: number; h: number } | null {
+  if (!value) return null;
+  const parts = value.split(",").map((v) => Number(v.trim()));
+  if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) return null;
+  const [x, y, w, h] = parts;
+  return { x, y, w, h };
+}
+
+// 顔ごとの識別色。番号と色を画像オーバーレイ・リストで共有。
+const FACE_COLORS = [
+  "#ef4444",
+  "#3b82f6",
+  "#22c55e",
+  "#eab308",
+  "#a855f7",
+  "#ec4899",
+  "#06b6d4",
+  "#f97316",
+];
+const faceColor = (index: number) => FACE_COLORS[index % FACE_COLORS.length];
+
 export default function PhotoDetail() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -46,6 +67,8 @@ export default function PhotoDetail() {
   const [saveErr, setSaveErr] = useState<string | null>(null);
   const [reprocessBusy, setReprocessBusy] = useState(false);
   const [reprocessErr, setReprocessErr] = useState<string | null>(null);
+  const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
+  const [hoveredLink, setHoveredLink] = useState<number | null>(null);
 
   const resetForm = (target: Photo) => {
     setMemo(target.memo ?? "");
@@ -156,9 +179,49 @@ export default function PhotoDetail() {
       </Link>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <div className="overflow-hidden rounded-lg border bg-muted">
+        <div className="relative overflow-hidden rounded-lg border bg-muted">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={photoRawUrl(photo.id)} alt={`photo ${photo.id}`} className="w-full object-contain" />
+          <img
+            src={photoRawUrl(photo.id)}
+            alt={`photo ${photo.id}`}
+            className="w-full object-contain"
+            onLoad={(e) =>
+              setImgSize({
+                w: e.currentTarget.naturalWidth,
+                h: e.currentTarget.naturalHeight,
+              })
+            }
+          />
+          {imgSize &&
+            photo.person_links.map((link, index) => {
+              const box = parseBbox(link.bbox);
+              if (!box) return null;
+              const color = faceColor(index);
+              const active = hoveredLink === link.id;
+              return (
+                <div
+                  key={link.id}
+                  className="pointer-events-none absolute transition-opacity"
+                  style={{
+                    left: `${(box.x / imgSize.w) * 100}%`,
+                    top: `${(box.y / imgSize.h) * 100}%`,
+                    width: `${(box.w / imgSize.w) * 100}%`,
+                    height: `${(box.h / imgSize.h) * 100}%`,
+                    border: `${active ? 3 : 2}px solid ${color}`,
+                    borderRadius: 4,
+                    boxShadow: active ? `0 0 0 2px ${color}55` : "none",
+                    opacity: hoveredLink == null || active ? 1 : 0.35,
+                  }}
+                >
+                  <span
+                    className="absolute -left-px -top-5 rounded px-1 text-xs font-bold text-white"
+                    style={{ backgroundColor: color }}
+                  >
+                    {index + 1}
+                  </span>
+                </div>
+              );
+            })}
         </div>
 
         <div className="space-y-4">
@@ -247,8 +310,20 @@ export default function PhotoDetail() {
                   顔がない、または顔認識ランタイム未導入です。
                 </p>
               )}
-              {photo.person_links.map((link) => (
-                <div key={link.id} className="flex flex-wrap items-center gap-2 rounded-md border p-2">
+              {photo.person_links.map((link, index) => (
+                <div
+                  key={link.id}
+                  className="flex flex-wrap items-center gap-2 rounded-md border p-2 transition-colors"
+                  style={hoveredLink === link.id ? { backgroundColor: `${faceColor(index)}1a` } : undefined}
+                  onMouseEnter={() => setHoveredLink(link.id)}
+                  onMouseLeave={() => setHoveredLink(null)}
+                >
+                  <span
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-xs font-bold text-white"
+                    style={{ backgroundColor: faceColor(index) }}
+                  >
+                    {index + 1}
+                  </span>
                   <div className="flex-1">
                     {link.person_id ? (
                       <Link href={`/persons/${link.person_id}`} className="font-medium underline">
