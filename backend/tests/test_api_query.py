@@ -46,3 +46,14 @@ def test_identify_missing_key_header_rejected(client: TestClient) -> None:
     _set_api_key(client, "secret-key")
     r = client.post("/api/identify", files=_img())
     assert r.status_code == 401
+
+
+def test_storage_dir_honors_db_override(db) -> None:
+    """api_storage_dir のDB設定変更がサービスの保存先に反映される。"""
+    from pathlib import Path
+
+    from app.services.api_query_service import ApiQueryService
+    from app.services.settings_service import SettingsService
+
+    SettingsService(db).update({"api_storage_dir": "/tmp/custom_api_photos"})
+    assert ApiQueryService(db).storage == Path("/tmp/custom_api_photos")

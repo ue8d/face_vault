@@ -41,8 +41,12 @@ def _to_webp(content: bytes) -> tuple[bytes, str]:
 
 class ApiQueryService:
     def __init__(self, db: Session) -> None:
+        from app.services.settings_service import SettingsService
+
         self.db = db
-        self.storage = Path(settings.api_storage_dir)
+        # DB設定(api_storage_dir)を尊重。未設定なら env/デフォルトへフォールバック。
+        storage_dir = SettingsService(db).value("api_storage_dir") or settings.api_storage_dir
+        self.storage = Path(storage_dir)
 
     # --- 判定（学習なし） ---
     def identify(
