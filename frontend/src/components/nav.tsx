@@ -11,6 +11,7 @@ import {
   Settings,
   ClipboardCheck,
   Webhook,
+  DownloadCloud,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,7 @@ const links = [
   { href: "/persons", label: "人物", icon: Users },
   { href: "/events", label: "イベント", icon: CalendarDays },
   { href: "/review", label: "確認", icon: ClipboardCheck },
+  { href: "/collect", label: "収集", icon: DownloadCloud },
   { href: "/search", label: "検索", icon: Search },
   { href: "/api-logs", label: "API", icon: Webhook },
   { href: "/settings", label: "設定", icon: Settings },

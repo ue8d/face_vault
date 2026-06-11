@@ -47,7 +47,22 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
-    yield
+    # 定期収集スケジューラを起動（収集元の next_run_at 到来分を巡回）。
+    import asyncio
+
+    from app.services.collect_scheduler import collect_loop
+
+    stop = asyncio.Event()
+    scheduler_task = asyncio.create_task(collect_loop(stop))
+
+    try:
+        yield
+    finally:
+        stop.set()
+        try:
+            await asyncio.wait_for(scheduler_task, timeout=5)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            scheduler_task.cancel()
 
 
 app = FastAPI(

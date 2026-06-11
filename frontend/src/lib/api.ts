@@ -1,5 +1,8 @@
 import type {
   ApiQuery,
+  CollectRunResult,
+  CollectSource,
+  CollectSourceInput,
   Environment,
   EventItem,
   IdentifyResponse,
@@ -219,4 +222,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ person_id: personId }),
     }),
+
+  // collect (自動画像収集)
+  listCollectSources: () => http<CollectSource[]>(`/collect/sources`),
+  createCollectSource: (data: CollectSourceInput) =>
+    http<CollectSource>(`/collect/sources`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateCollectSource: (id: number, data: Partial<CollectSourceInput>) =>
+    http<CollectSource>(`/collect/sources/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteCollectSource: (id: number) =>
+    http<void>(`/collect/sources/${id}`, { method: "DELETE" }),
+  runCollectSource: (id: number) =>
+    http<CollectRunResult>(`/collect/sources/${id}/run`, { method: "POST" }),
 };
