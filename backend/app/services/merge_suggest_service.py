@@ -34,9 +34,10 @@ class Suggestion:
 
 
 class MergeSuggestService:
-    def __init__(self, db: Session, index: VectorIndex) -> None:
+    def __init__(self, db: Session, index: VectorIndex, env_id: int | None = None) -> None:
         self.db = db
         self.index = index
+        self.env_id = env_id
 
     def suggestions(
         self, *, limit: int | None = 20, threshold: float | None = None
@@ -45,10 +46,14 @@ class MergeSuggestService:
             threshold = float(SettingsService(self.db).value("merge_suggest_threshold") or 0.5)
 
         # insightface 空間のみで比較（モデル間は別空間のため混在不可）。
-        rows = self.db.execute(
-            select(PersonEmbedding.id, PersonEmbedding.person_id, PersonEmbedding.embedding)
-            .where(PersonEmbedding.model_key == INSIGHTFACE)
-        ).all()
+        stmt = select(
+            PersonEmbedding.id, PersonEmbedding.person_id, PersonEmbedding.embedding
+        ).where(PersonEmbedding.model_key == INSIGHTFACE)
+        if self.env_id is not None:
+            stmt = stmt.join(Person, PersonEmbedding.person_id == Person.id).where(
+                Person.environment_id == self.env_id
+            )
+        rows = self.db.execute(stmt).all()
         emb_person = {eid: pid for eid, pid, _ in rows}
 
         best: dict[tuple[int, int], float] = {}

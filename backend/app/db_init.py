@@ -6,11 +6,18 @@
 from __future__ import annotations
 
 import app.models  # noqa: F401  全モデル登録
-from app.db.base import Base, engine
+from app.db.base import Base, SessionLocal, engine
 
 
 def main() -> None:
     Base.metadata.create_all(bind=engine)
+    from app.services.environment_service import ensure_default_environment
+
+    db = SessionLocal()
+    try:
+        ensure_default_environment(db)
+    finally:
+        db.close()
     print("[db_init] tables ensured")
 
 

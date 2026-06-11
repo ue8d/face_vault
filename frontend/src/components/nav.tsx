@@ -11,9 +11,11 @@ import {
   Settings,
   ClipboardCheck,
   Webhook,
+  DownloadCloud,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { EnvSwitcher } from "@/components/env-switcher";
 
 const links = [
   { href: "/", label: "ホーム", icon: LayoutDashboard },
@@ -21,6 +23,7 @@ const links = [
   { href: "/persons", label: "人物", icon: Users },
   { href: "/events", label: "イベント", icon: CalendarDays },
   { href: "/review", label: "確認", icon: ClipboardCheck },
+  { href: "/collect", label: "収集", icon: DownloadCloud },
   { href: "/search", label: "検索", icon: Search },
   { href: "/api-logs", label: "API", icon: Webhook },
   { href: "/settings", label: "設定", icon: Settings },
@@ -51,9 +54,10 @@ export function Nav() {
     <>
       {/* PC: サイド */}
       <aside className="hidden md:flex md:w-56 md:flex-col md:border-r md:bg-card md:p-4">
-        <Link href="/" className="mb-6 px-2 text-xl font-bold">
+        <Link href="/" className="mb-4 px-2 text-xl font-bold">
           face_vault
         </Link>
+        <EnvSwitcher />
         <nav className="flex flex-col gap-1">
           {links.map(({ href, label, icon: Icon }) => (
             <Link
@@ -73,6 +77,11 @@ export function Nav() {
           ))}
         </nav>
       </aside>
+
+      {/* モバイル: 上部に環境切替 */}
+      <div className="fixed inset-x-0 top-0 z-40 border-b bg-card px-3 py-1.5 md:hidden">
+        <EnvSwitcher compact />
+      </div>
 
       {/* モバイル: 下部バー */}
       <nav className="fixed inset-x-0 bottom-0 z-40 flex border-t bg-card md:hidden">

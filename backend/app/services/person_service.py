@@ -29,10 +29,11 @@ def _clean(names: list[str]) -> list[str]:
 
 
 class PersonService:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, env_id: int | None = None) -> None:
         self.db = db
-        self.persons = PersonRepository(db)
-        self.tags = TagRepository(db)
+        self.env_id = env_id
+        self.persons = PersonRepository(db, env_id)
+        self.tags = TagRepository(db, env_id)
 
     def list(self, *, q: str | None = None, limit: int = 100, offset: int = 0) -> list[Person]:
         if q:
@@ -46,7 +47,14 @@ class PersonService:
         return self.persons.get(person_id)
 
     def get_event(self, event_id: int) -> Event | None:
-        return self.db.get(Event, event_id)
+        event = self.db.get(Event, event_id)
+        if (
+            event is not None
+            and self.env_id is not None
+            and event.environment_id != self.env_id
+        ):
+            return None
+        return event
 
     def create(self, data: PersonCreate) -> Person:
         person = Person(
@@ -118,24 +126,26 @@ class PersonService:
             aliases = _clean([*mains[1:], *aliases])
             aliases = [alias for alias in aliases if alias != main]
             url = img_urls.get(external_id)
-            external = self.db.scalar(
-                select(PersonExternalId).where(
-                    PersonExternalId.source == source,
-                    PersonExternalId.external_id == external_id,
-                )
+            ext_stmt = select(PersonExternalId).where(
+                PersonExternalId.source == source,
+                PersonExternalId.external_id == external_id,
             )
+            if self.env_id is not None:
+                ext_stmt = ext_stmt.where(PersonExternalId.environment_id == self.env_id)
+            external = self.db.scalar(ext_stmt)
             if external is None:
                 person = Person(name=main)
                 person.nicknames = [Nickname(name=alias) for alias in aliases]
                 self.persons.add(person)
                 self.db.flush()
-                self.db.add(
-                    PersonExternalId(
-                        person_id=person.id,
-                        source=source,
-                        external_id=external_id,
-                    )
+                ext = PersonExternalId(
+                    person_id=person.id,
+                    source=source,
+                    external_id=external_id,
                 )
+                if self.env_id is not None:
+                    ext.environment_id = self.env_id
+                self.db.add(ext)
                 result.created += 1
                 if url and self._enqueue_face(person.id, url):
                     result.face_queued += 1

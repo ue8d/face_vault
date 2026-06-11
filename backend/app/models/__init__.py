@@ -5,7 +5,10 @@ from app.db.base import Base
 from app.models.api_query import ApiQuery
 from app.models.app_setting import AppSetting
 from app.models.associations import event_persons, person_tags
+from app.models.collect_source import CollectSource
+from app.models.collected_url import CollectedUrl
 from app.models.cooccurrence import PersonCooccurrence
+from app.models.environment import Environment
 from app.models.event import Event
 from app.models.face_embedding import FaceEmbedding
 from app.models.face_import import FaceImport
@@ -22,6 +25,9 @@ __all__ = [
     "ApiQuery",
     "AppSetting",
     "Base",
+    "CollectSource",
+    "CollectedUrl",
+    "Environment",
     "Event",
     "FaceEmbedding",
     "FaceImport",

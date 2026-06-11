@@ -1,3 +1,53 @@
+export interface Environment {
+  id: number;
+  name: string;
+  created_at: string;
+  person_count: number;
+  photo_count: number;
+}
+
+export type CrawlMode = "page" | "shallow" | "domain";
+
+export interface CollectSource {
+  id: number;
+  name: string;
+  start_url: string;
+  crawl_mode: CrawlMode;
+  max_pages: number;
+  max_images: number;
+  same_domain_only: boolean;
+  respect_robots: boolean;
+  enabled: boolean;
+  interval_minutes: number;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  last_status: string | null;
+  last_error: string | null;
+  created_at: string;
+}
+
+export interface CollectSourceInput {
+  name: string;
+  start_url: string;
+  crawl_mode: CrawlMode;
+  max_pages: number;
+  max_images: number;
+  same_domain_only: boolean;
+  respect_robots: boolean;
+  enabled: boolean;
+  interval_minutes: number;
+}
+
+export interface CollectRunResult {
+  found_urls: number;
+  new_urls: number;
+  saved: number;
+  skipped_duplicate: number;
+  failed: number;
+  pages_scanned: number;
+  error: string | null;
+}
+
 export interface Tag {
   id: number;
   name: string;

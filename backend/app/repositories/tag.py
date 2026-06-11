@@ -11,7 +11,7 @@ class TagRepository(BaseRepository[Tag]):
     model = Tag
 
     def get_by_name(self, name: str) -> Tag | None:
-        return self.db.scalar(select(Tag).where(Tag.name == name))
+        return self.db.scalar(self._scoped(select(Tag).where(Tag.name == name)))
 
     def get_or_create(self, name: str) -> Tag:
         tag = self.get_by_name(name)

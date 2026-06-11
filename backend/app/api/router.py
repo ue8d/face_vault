@@ -5,6 +5,8 @@ from fastapi import APIRouter
 
 from app.api.routes import (
     api_external,
+    collect,
+    environments,
     events,
     faces,
     identify,
@@ -21,5 +23,7 @@ api_router.include_router(events.router, prefix="/events", tags=["events"])
 api_router.include_router(faces.router, tags=["faces"])
 api_router.include_router(review.router, tags=["review"])
 api_router.include_router(settings.router, tags=["settings"])
+api_router.include_router(environments.router, tags=["environments"])
+api_router.include_router(collect.router, tags=["collect"])
 api_router.include_router(identify.router, tags=["identify"])
 api_router.include_router(api_external.router)

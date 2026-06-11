@@ -11,5 +11,9 @@ class EventRepository(BaseRepository[Event]):
     model = Event
 
     def search_by_name(self, q: str, *, limit: int = 100, offset: int = 0) -> list[Event]:
-        stmt = select(Event).where(Event.name.ilike(f"%{q}%")).limit(limit).offset(offset)
+        stmt = (
+            self._scoped(select(Event).where(Event.name.ilike(f"%{q}%")))
+            .limit(limit)
+            .offset(offset)
+        )
         return list(self.db.scalars(stmt).all())

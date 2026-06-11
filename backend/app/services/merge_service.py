@@ -28,6 +28,8 @@ class PersonMergeService:
         target = self.db.get(Person, target_id)
         if source is None or target is None:
             raise ValueError("人物が存在しない")
+        if source.environment_id != target.environment_id:
+            raise ValueError("環境が異なる人物は統合できません")
 
         self._merge_photo_links(source_id, target_id)
         self._move_embeddings(source_id, target_id)

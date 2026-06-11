@@ -45,8 +45,10 @@ class FaceService:
         detector: FaceDetector | None = None,
         *,
         threshold: float | None = None,
+        env_id: int | None = None,
     ) -> None:
         self.db = db
+        self.env_id = env_id  # None = 環境フィルタなし（テスト/レガシー）
         self.index = index  # insightface 用（後方互換: 既存呼び出しが渡す index）
         self._indexes: dict[str, VectorIndex] = {INSIGHTFACE: index}
         self._detector = detector
@@ -93,7 +95,7 @@ class FaceService:
         if idx is None:
             from app.face.registry import get_index
 
-            idx = get_index(model_key)
+            idx = get_index(model_key, env_id=self.env_id)
             self._indexes[model_key] = idx
         return idx
 
@@ -109,12 +111,20 @@ class FaceService:
 
     # --- インデックス構築 ---
     def rebuild_index(self) -> int:
-        """全モデルの index を person_embeddings から再構築。登録総数を返す。"""
-        rows = self.db.execute(
-            select(
-                PersonEmbedding.id, PersonEmbedding.model_key, PersonEmbedding.embedding
+        """全モデルの index を person_embeddings から再構築。登録総数を返す。
+
+        env_id 指定時はその環境の人物分のみ（環境別 index の正本範囲）。
+        """
+        stmt = select(
+            PersonEmbedding.id, PersonEmbedding.model_key, PersonEmbedding.embedding
+        )
+        if self.env_id is not None:
+            from app.models.person import Person
+
+            stmt = stmt.join(Person, PersonEmbedding.person_id == Person.id).where(
+                Person.environment_id == self.env_id
             )
-        ).all()
+        rows = self.db.execute(stmt).all()
         by_model: dict[str, list[tuple[int, np.ndarray]]] = {}
         for rid, model_key, buf in rows:
             by_model.setdefault(model_key, []).append((rid, emb.from_bytes(buf)))
@@ -341,6 +351,8 @@ class FaceService:
         from app.models.person import Person
 
         person = Person(name="（自動登録）", memo="顔認識による自動登録。確認/改名/統合してください。")
+        if self.env_id is not None:
+            person.environment_id = self.env_id
         self.db.add(person)
         self.db.flush()
         person.name = f"未確認人物 #{person.id}"
@@ -436,14 +448,19 @@ class FaceService:
         self.db.commit()
         return link
 
-    def process_photo(self, photo: Photo, image_bytes: bytes) -> list[PhotoPerson]:
-        """画像から検出 → 照合 → 登録。検出器が必要。"""
+    def process_photo(
+        self, photo: Photo, image_bytes: bytes, *, auto_enroll: bool | None = None
+    ) -> list[PhotoPerson]:
+        """画像から検出 → 照合 → 登録。検出器が必要。
+
+        auto_enroll: None=設定値依存 / False=未照合のまま確認キュー / True=新規人物自動作成。
+        """
         if self._detector is None:
             from app.face.detector import get_detector
 
             self._detector = get_detector()
         faces = self._detector.detect(image_bytes)
-        return self.process_detections(photo, faces)
+        return self.process_detections(photo, faces, auto_enroll=auto_enroll)
 
     def reprocess_photo(self, photo: Photo, image_bytes: bytes) -> list[PhotoPerson]:
         """既存の検出顔リンクを置き換えて、この写真を再度顔認識する。"""

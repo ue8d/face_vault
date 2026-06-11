@@ -10,9 +10,10 @@ from app.schemas.event import EventCreate, EventUpdate
 
 
 class EventService:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, env_id: int | None = None) -> None:
         self.db = db
-        self.events = EventRepository(db)
+        self.env_id = env_id
+        self.events = EventRepository(db, env_id)
 
     def list(self, *, q: str | None = None, limit: int = 100, offset: int = 0) -> list[Event]:
         if q:
@@ -26,7 +27,14 @@ class EventService:
         return self.events.count()
 
     def get_person(self, person_id: int) -> Person | None:
-        return self.db.get(Person, person_id)
+        person = self.db.get(Person, person_id)
+        if (
+            person is not None
+            and self.env_id is not None
+            and person.environment_id != self.env_id
+        ):
+            return None
+        return person
 
     def create(self, data: EventCreate) -> Event:
         event = Event(name=data.name, memo=data.memo)

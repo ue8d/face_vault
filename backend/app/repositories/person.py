@@ -20,17 +20,19 @@ class PersonRepository(BaseRepository[Person]):
             )
         else:
             stmt = select(func.count(Person.id))
-        return int(self.db.scalar(stmt) or 0)
+        return int(self.db.scalar(self._scoped(stmt)) or 0)
 
     def list(self, *, limit: int = 100, offset: int = 0) -> list[Person]:
-        stmt = select(Person).order_by(Person.id).limit(limit).offset(offset)
+        stmt = self._scoped(select(Person)).order_by(Person.id).limit(limit).offset(offset)
         return list(self.db.scalars(stmt).all())
 
     def search_by_name(self, q: str, *, limit: int = 100, offset: int = 0) -> list[Person]:
         stmt = (
-            select(Person)
-            .outerjoin(Nickname)
-            .where(or_(Person.name.ilike(f"%{q}%"), Nickname.name.ilike(f"%{q}%")))
+            self._scoped(
+                select(Person)
+                .outerjoin(Nickname)
+                .where(or_(Person.name.ilike(f"%{q}%"), Nickname.name.ilike(f"%{q}%")))
+            )
             .distinct()
             .order_by(Person.id)
             .limit(limit)

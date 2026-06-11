@@ -23,22 +23,46 @@ async def lifespan(app: FastAPI):
 
         Base.metadata.create_all(bind=engine)
 
-    # 顔ベクトルインデックス(FAISS/numpy)を person_embeddings から構築。
+    # 顔ベクトルインデックス(FAISS/numpy)を person_embeddings から環境別に構築。
     # DB が正本。再起動毎に再構築 → 常に整合。/faces/reindex でも再構築可。
     from app.face.registry import get_index
+    from app.models.environment import Environment
+    from app.services.environment_service import ensure_default_environment
     from app.services.face_service import FaceService
 
     db = SessionLocal()
     try:
-        index = get_index()
-        n = FaceService(db, index).rebuild_index()
-        logger.info("vector index built: backend=%s size=%d", index.backend, n)
+        ensure_default_environment(db)
+        from sqlalchemy import select
+
+        for env in db.scalars(select(Environment)).all():
+            index = get_index(env_id=env.id)
+            n = FaceService(db, index, env_id=env.id).rebuild_index()
+            logger.info(
+                "vector index built: env=%s backend=%s size=%d",
+                env.id, index.backend, n,
+            )
     except Exception:  # noqa: BLE001 - 構築失敗でもAPI起動は継続（reindexで復旧可）
         logger.warning("vector index build skipped", exc_info=True)
     finally:
         db.close()
 
-    yield
+    # 定期収集スケジューラを起動（収集元の next_run_at 到来分を巡回）。
+    import asyncio
+
+    from app.services.collect_scheduler import collect_loop
+
+    stop = asyncio.Event()
+    scheduler_task = asyncio.create_task(collect_loop(stop))
+
+    try:
+        yield
+    finally:
+        stop.set()
+        try:
+            await asyncio.wait_for(scheduler_task, timeout=5)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            scheduler_task.cancel()
 
 
 app = FastAPI(
