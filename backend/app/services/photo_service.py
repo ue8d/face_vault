@@ -110,10 +110,19 @@ def _memo_with_image_name(memo: str | None, filename: str) -> str:
 
 
 class PhotoService:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, env_id: int | None = None) -> None:
         self.db = db
-        self.photos = PhotoRepository(db)
+        self.env_id = env_id
+        self.photos = PhotoRepository(db, env_id)
         self.storage = Path(settings.photo_storage_dir)
+
+    def _face_service(self):
+        from app.face.registry import get_index
+        from app.services.face_service import FaceService
+
+        return FaceService(
+            self.db, get_index(env_id=self.env_id), env_id=self.env_id
+        )
 
     def search(self, f: PhotoFilter, *, limit: int = 100, offset: int = 0) -> list[Photo]:
         return self.photos.search(f, limit=limit, offset=offset)
@@ -172,20 +181,14 @@ class PhotoService:
             logger.warning("failed to remove file %s", fpath, exc_info=True)
 
         if emb_ids:  # ベクトルが減ったので索引再構築
-            from app.face.registry import get_index
-            from app.services.face_service import FaceService
-
-            FaceService(self.db, get_index()).rebuild_index()
+            self._face_service().rebuild_index()
 
     def reprocess(self, photo: Photo) -> Photo:
         fpath = self.storage / photo.path
         if not fpath.exists():
             raise FileNotFoundError(photo.path)
 
-        from app.face.registry import get_index
-        from app.services.face_service import FaceService
-
-        face_svc = FaceService(self.db, get_index())
+        face_svc = self._face_service()
         face_svc.rebuild_index()
         face_svc.reprocess_photo(photo, fpath.read_bytes())
         self.db.commit()
@@ -236,10 +239,7 @@ class PhotoService:
         # 顔検出→Embedding→照合→photo_persons登録（best-effort・別トランザクション）。
         # ランタイム未導入・モデルDL失敗・デコード不能等でもアップロード自体は成功済み。
         try:
-            from app.face.registry import get_index
-            from app.services.face_service import FaceService
-
-            FaceService(self.db, get_index()).process_photo(photo, content)
+            self._face_service().process_photo(photo, content)
             self.db.commit()
         except Exception:  # noqa: BLE001 - 顔処理は付随処理。失敗してもメタ登録は維持
             self.db.rollback()

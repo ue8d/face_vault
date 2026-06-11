@@ -13,7 +13,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <div className="flex min-h-screen">
           <Nav />
-          <main className="flex-1 pb-20 md:pb-0">
+          <main className="flex-1 pb-20 pt-12 md:pb-0 md:pt-0">
             <div className="container py-6">{children}</div>
           </main>
         </div>

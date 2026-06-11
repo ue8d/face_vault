@@ -1,3 +1,11 @@
+export interface Environment {
+  id: number;
+  name: string;
+  created_at: string;
+  person_count: number;
+  photo_count: number;
+}
+
 export interface Tag {
   id: number;
   name: string;

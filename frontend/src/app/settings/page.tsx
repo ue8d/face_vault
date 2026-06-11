@@ -1,14 +1,144 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Save, RotateCcw } from "lucide-react";
-import { api } from "@/lib/api";
-import type { SettingItem } from "@/lib/types";
+import { Save, RotateCcw, Plus, Trash2, Check, Layers } from "lucide-react";
+import { api, getCurrentEnvId, setCurrentEnvId } from "@/lib/api";
+import type { Environment, SettingItem } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingState } from "@/components/ui/loading-state";
+
+function EnvironmentsCard() {
+  const [envs, setEnvs] = useState<Environment[]>([]);
+  const [names, setNames] = useState<Record<number, string>>({});
+  const [newName, setNewName] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const currentId = getCurrentEnvId();
+
+  const load = async () => {
+    try {
+      const list = await api.listEnvironments();
+      setEnvs(list);
+      setNames(Object.fromEntries(list.map((e) => [e.id, e.name])));
+    } catch (e) {
+      setMsg(`読み込み失敗: ${(e as Error).message}`);
+    }
+  };
+  useEffect(() => {
+    load();
+  }, []);
+
+  const create = async () => {
+    if (!newName.trim()) return;
+    try {
+      const env = await api.createEnvironment(newName.trim());
+      setNewName("");
+      setMsg(`環境「${env.name}」を追加しました`);
+      await load();
+    } catch (e) {
+      setMsg(`追加失敗: ${(e as Error).message}`);
+    }
+  };
+
+  const rename = async (env: Environment) => {
+    const name = (names[env.id] ?? "").trim();
+    if (!name || name === env.name) return;
+    try {
+      await api.renameEnvironment(env.id, name);
+      setMsg(`「${env.name}」→「${name}」に変更しました`);
+      await load();
+    } catch (e) {
+      setMsg(`変更失敗: ${(e as Error).message}`);
+    }
+  };
+
+  const remove = async (env: Environment) => {
+    const ok = window.confirm(
+      `環境「${env.name}」を削除します。\n` +
+        `人物 ${env.person_count} 件・写真 ${env.photo_count} 件を含む` +
+        `この環境の全データ（画像ファイル含む）が完全に削除されます。\n` +
+        `この操作は取り消せません。実行しますか？`,
+    );
+    if (!ok) return;
+    try {
+      await api.deleteEnvironment(env.id);
+      if (currentId === env.id) {
+        setCurrentEnvId(null);
+        window.location.reload();
+        return;
+      }
+      setMsg(`環境「${env.name}」を削除しました`);
+      await load();
+    } catch (e) {
+      setMsg(`削除失敗: ${(e as Error).message}`);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Layers className="h-5 w-5" /> 環境管理
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          環境ごとに人物・写真・イベント・タグ・APIログを完全分離。
+          左メニューのセレクタで切替。削除は配下の全データを消す（復元不可）。
+        </p>
+        {msg && <p className="text-sm text-primary">{msg}</p>}
+        <div className="space-y-2">
+          {envs.map((env) => (
+            <div key={env.id} className="flex items-center gap-2">
+              <Input
+                value={names[env.id] ?? env.name}
+                onChange={(e) =>
+                  setNames((s) => ({ ...s, [env.id]: e.target.value }))
+                }
+                className="max-w-xs"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => rename(env)}
+                disabled={(names[env.id] ?? env.name).trim() === env.name}
+                title="名前を保存"
+              >
+                <Check className="h-4 w-4" />
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                人物 {env.person_count} / 写真 {env.photo_count}
+              </span>
+              {currentId === env.id && <Badge>使用中</Badge>}
+              <button
+                onClick={() => remove(env)}
+                disabled={envs.length <= 1}
+                className="ml-auto text-muted-foreground hover:text-destructive disabled:opacity-30"
+                title={envs.length <= 1 ? "最後の環境は削除不可" : "環境を削除"}
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <Input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="新しい環境名"
+            className="max-w-xs"
+            onKeyDown={(e) => e.key === "Enter" && create()}
+          />
+          <Button variant="outline" size="sm" onClick={create} disabled={!newName.trim()}>
+            <Plus className="h-4 w-4" /> 追加
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function SettingsPage() {
   const [items, setItems] = useState<SettingItem[]>([]);
@@ -91,6 +221,8 @@ export default function SettingsPage() {
         DB接続・ポートは起動前必須のためenv管理（ここには出ない）。
       </p>
       {msg && <p className="text-sm text-primary">{msg}</p>}
+
+      <EnvironmentsCard />
 
       {loading && items.length > 0 && <LoadingState compact label="設定を更新中..." />}
 

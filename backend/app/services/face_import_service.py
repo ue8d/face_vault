@@ -56,25 +56,38 @@ class FaceImportService:
         return out
 
     def process_batch(self, *, limit: int = 25) -> dict[str, int]:
-        """pending を limit 件処理。各件: 取得→検出→参照顔登録。"""
-        from app.face.detector import get_detector
+        """pending を limit 件処理。各件: 取得→検出→参照顔登録。
 
-        face = FaceService(self.db, get_index())
-        photos = PhotoService(self.db)
+        登録先の index/写真は対象人物の環境に揃える（環境別 index 汚染防止）。
+        """
+        from app.face.detector import get_detector
+        from app.models.person import Person
+
         rows = self.db.execute(
             select(FaceImport).where(FaceImport.status == "pending").limit(limit)
         ).scalars().all()
 
+        face_by_env: dict[int | None, FaceService] = {}
+        photos_by_env: dict[int | None, PhotoService] = {}
         done = failed = 0
         for row in rows:
             try:
+                env_id = self.db.scalar(
+                    select(Person.environment_id).where(Person.id == row.person_id)
+                )
+                if env_id not in face_by_env:
+                    face_by_env[env_id] = FaceService(
+                        self.db, get_index(env_id=env_id), env_id=env_id
+                    )
+                    photos_by_env[env_id] = PhotoService(self.db, env_id)
+                face = face_by_env[env_id]
                 content = _download(row.img_url)
                 faces = get_detector().detect(content)
                 if not faces:
                     raise ValueError("顔が検出できません")
                 if not face.quality_ok(faces[0]):
                     raise ValueError("顔の品質が低い（小さい/不鮮明）")
-                photo = photos.store_image(
+                photo = photos_by_env[env_id].store_image(
                     content=content,
                     filename="import.jpg",
                     memo=f"CSV取込 参照顔 (person #{row.person_id})",

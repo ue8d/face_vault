@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_env_id
 from app.db.base import get_db
 from app.schemas.event import EventCreate, EventOut, EventUpdate
 from app.schemas.person import PersonOut
@@ -12,8 +13,10 @@ from app.services.event_service import EventService
 router = APIRouter()
 
 
-def _service(db: Session = Depends(get_db)) -> EventService:
-    return EventService(db)
+def _service(
+    db: Session = Depends(get_db), env_id: int = Depends(get_env_id)
+) -> EventService:
+    return EventService(db, env_id)
 
 
 @router.get("", response_model=list[EventOut])

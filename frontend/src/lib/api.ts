@@ -1,5 +1,6 @@
 import type {
   ApiQuery,
+  Environment,
   EventItem,
   IdentifyResponse,
   Person,
@@ -19,13 +20,32 @@ import type {
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || "http://localhost:8017";
 
+// 選択中の環境（テナント）。全リクエストに X-Environment-Id を付与して分離。
+export const ENV_STORAGE_KEY = "fv_env_id";
+
+export function getCurrentEnvId(): number | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(ENV_STORAGE_KEY);
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+export function setCurrentEnvId(id: number | null) {
+  if (typeof window === "undefined") return;
+  if (id == null) window.localStorage.removeItem(ENV_STORAGE_KEY);
+  else window.localStorage.setItem(ENV_STORAGE_KEY, String(id));
+}
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
+  const envId = getCurrentEnvId();
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
       ...(init?.body && !(init.body instanceof FormData)
         ? { "Content-Type": "application/json" }
         : {}),
+      ...(envId != null ? { "X-Environment-Id": String(envId) } : {}),
       ...init?.headers,
     },
     cache: "no-store",
@@ -175,6 +195,18 @@ export const api = {
   registerPersonFace: (personId: number, form: FormData) =>
     http(`/persons/${personId}/faces`, { method: "POST", body: form }),
   reindex: () => http<{ backend: string; size: number }>(`/faces/reindex`, { method: "POST" }),
+
+  // environments
+  listEnvironments: () => http<Environment[]>(`/environments`),
+  createEnvironment: (name: string) =>
+    http<Environment>(`/environments`, { method: "POST", body: JSON.stringify({ name }) }),
+  renameEnvironment: (id: number, name: string) =>
+    http<Environment>(`/environments/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }),
+  deleteEnvironment: (id: number) =>
+    http<void>(`/environments/${id}`, { method: "DELETE" }),
 
   // settings
   listSettings: () => http<SettingItem[]>(`/settings`),

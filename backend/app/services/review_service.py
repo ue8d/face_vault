@@ -37,9 +37,10 @@ class ReviewItem:
 
 
 class ReviewService:
-    def __init__(self, db: Session, index: VectorIndex) -> None:
+    def __init__(self, db: Session, index: VectorIndex, env_id: int | None = None) -> None:
         self.db = db
         self.index = index
+        self.env_id = env_id
 
     def _criteria(self):
         rc = float(SettingsService(self.db).value("review_confidence") or 0.45)
@@ -48,26 +49,34 @@ class ReviewService:
             and_(PhotoPerson.confidence.is_not(None), PhotoPerson.confidence < rc),
         )
 
+    def _scoped(self, stmt):
+        if self.env_id is not None:
+            from app.models.photo import Photo
+
+            stmt = stmt.join(Photo, PhotoPerson.photo_id == Photo.id).where(
+                Photo.environment_id == self.env_id
+            )
+        return stmt
+
     def count(self) -> int:
         from sqlalchemy import func
 
         return int(
             self.db.scalar(
-                select(func.count(PhotoPerson.id)).where(self._criteria())
+                self._scoped(select(func.count(PhotoPerson.id)).where(self._criteria()))
             )
             or 0
         )
 
     def faces(self, *, limit: int = 30, offset: int = 0) -> list[ReviewItem]:
         links = self.db.execute(
-            select(PhotoPerson)
-            .where(self._criteria())
+            self._scoped(select(PhotoPerson).where(self._criteria()))
             .order_by(PhotoPerson.id)
             .limit(limit)
             .offset(offset)
         ).scalars().all()
 
-        face = FaceService(self.db, self.index)
+        face = FaceService(self.db, self.index, env_id=self.env_id)
         items: list[ReviewItem] = []
         need_ids: set[int] = set()
         raw: list[tuple[PhotoPerson, list]] = []

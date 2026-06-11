@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Respo
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_env_id
 from app.db.base import get_db
 from app.schemas.api_query import ApiIdentifyResponse, ApiLearnRequest, ApiQueryOut
 from app.services.api_query_service import ApiQueryService
@@ -23,7 +24,14 @@ from app.services.settings_service import SettingsService
 router = APIRouter()
 
 
-def _service(db: Session = Depends(get_db)) -> ApiQueryService:
+def _service(
+    db: Session = Depends(get_db), env_id: int = Depends(get_env_id)
+) -> ApiQueryService:
+    return ApiQueryService(db, env_id)
+
+
+def _unscoped_service(db: Session = Depends(get_db)) -> ApiQueryService:
+    """環境ヘッダを送れない <img> 直リンク（raw/crop）用。ID直指定のみ。"""
     return ApiQueryService(db)
 
 
@@ -83,7 +91,7 @@ def list_api_queries(
 
 
 @router.get("/api-queries/{query_id}/raw", tags=["external-api"])
-def get_api_query_raw(query_id: int, svc: ApiQueryService = Depends(_service)):
+def get_api_query_raw(query_id: int, svc: ApiQueryService = Depends(_unscoped_service)):
     row = svc.get(query_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "api query not found")
@@ -94,7 +102,7 @@ def get_api_query_raw(query_id: int, svc: ApiQueryService = Depends(_service)):
 
 
 @router.get("/api-queries/{query_id}/crop", tags=["external-api"])
-def get_api_query_crop(query_id: int, svc: ApiQueryService = Depends(_service)):
+def get_api_query_crop(query_id: int, svc: ApiQueryService = Depends(_unscoped_service)):
     """最初の検出顔のbboxで切り抜いた画像を返す（顔未検出時は全体）。プレビュー用。"""
     from io import BytesIO
 

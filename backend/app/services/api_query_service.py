@@ -40,10 +40,11 @@ def _to_webp(content: bytes) -> tuple[bytes, str]:
 
 
 class ApiQueryService:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, env_id: int | None = None) -> None:
         from app.services.settings_service import SettingsService
 
         self.db = db
+        self.env_id = env_id
         # DB設定(api_storage_dir)を尊重。未設定なら env/デフォルトへフォールバック。
         storage_dir = SettingsService(db).value("api_storage_dir") or settings.api_storage_dir
         self.storage = Path(storage_dir)
@@ -62,7 +63,9 @@ class ApiQueryService:
 
         faces = get_detector().detect(content)
 
-        face_svc = FaceService(self.db, get_index())
+        face_svc = FaceService(
+            self.db, get_index(env_id=self.env_id), env_id=self.env_id
+        )
         results: list[dict[str, Any]] = []
         for f in faces:
             cands = face_svc.match(f.embeddings, k=max(1, top_n))[:top_n]
@@ -97,6 +100,8 @@ class ApiQueryService:
             result=results,
             note=note,
         )
+        if self.env_id is not None:
+            row.environment_id = self.env_id
         self.db.add(row)
         self.db.commit()
         self.db.refresh(row)
@@ -113,7 +118,9 @@ class ApiQueryService:
         from app.face.registry import get_index
         from app.services.face_service import FaceService
 
-        if self.db.get(Person, person_id) is None:
+        person = self.db.get(Person, person_id)
+        # 学習先は受信ログと同じ環境の人物に限定（環境間のベクトル汚染防止）
+        if person is None or person.environment_id != row.environment_id:
             raise LookupError("person not found")
 
         fpath = self.file_path(row)
@@ -124,7 +131,11 @@ class ApiQueryService:
         if not faces or face_index < 0 or face_index >= len(faces):
             raise ValueError("face not found")
 
-        FaceService(self.db, get_index()).learn_face(person_id, faces[face_index])
+        FaceService(
+            self.db,
+            get_index(env_id=row.environment_id),
+            env_id=row.environment_id,
+        ).learn_face(person_id, faces[face_index])
         row.learned_person_id = person_id
         self.db.commit()
         self.db.refresh(row)
@@ -149,9 +160,11 @@ class ApiQueryService:
 
     # --- 閲覧 / 管理 ---
     def list(self, *, limit: int = 100, offset: int = 0) -> list[ApiQuery]:
+        stmt = select(ApiQuery)
+        if self.env_id is not None:
+            stmt = stmt.where(ApiQuery.environment_id == self.env_id)
         stmt = (
-            select(ApiQuery)
-            .order_by(ApiQuery.created_at.desc(), ApiQuery.id.desc())
+            stmt.order_by(ApiQuery.created_at.desc(), ApiQuery.id.desc())
             .limit(limit)
             .offset(offset)
         )

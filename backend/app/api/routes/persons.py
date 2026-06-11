@@ -16,6 +16,7 @@ from fastapi import (
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_env_id
 from app.db.base import get_db
 from app.schemas.event import EventOut
 from app.schemas.person import (
@@ -33,8 +34,10 @@ from app.services.person_service import PersonService
 router = APIRouter()
 
 
-def _service(db: Session = Depends(get_db)) -> PersonService:
-    return PersonService(db)
+def _service(
+    db: Session = Depends(get_db), env_id: int = Depends(get_env_id)
+) -> PersonService:
+    return PersonService(db, env_id)
 
 
 @router.get("", response_model=list[PersonOut])
@@ -106,21 +109,31 @@ def count_persons(
 
 
 @router.get("/merge-suggestions", response_model=list[MergeSuggestionOut])
-def merge_suggestions(limit: int | None = None, db: Session = Depends(get_db)):
+def merge_suggestions(
+    limit: int | None = None,
+    db: Session = Depends(get_db),
+    env_id: int = Depends(get_env_id),
+):
     """ベクトル近接の別人物ペア（重複の疑い）を提案。limit 未指定で全件。"""
     from app.face.registry import get_index
     from app.services.merge_suggest_service import MergeSuggestService
 
-    return MergeSuggestService(db, get_index()).suggestions(limit=limit)
+    return MergeSuggestService(db, get_index(env_id=env_id), env_id).suggestions(limit=limit)
 
 
 @router.post("/merge-suggestions/dismiss", status_code=status.HTTP_204_NO_CONTENT)
-def dismiss_merge_suggestion(req: DismissRequest, db: Session = Depends(get_db)) -> Response:
+def dismiss_merge_suggestion(
+    req: DismissRequest,
+    db: Session = Depends(get_db),
+    env_id: int = Depends(get_env_id),
+) -> Response:
     """「別人」として却下 → 再提案しない。"""
     from app.face.registry import get_index
     from app.services.merge_suggest_service import MergeSuggestService
 
-    MergeSuggestService(db, get_index()).dismiss(req.person_a_id, req.person_b_id)
+    MergeSuggestService(db, get_index(env_id=env_id), env_id).dismiss(
+        req.person_a_id, req.person_b_id
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

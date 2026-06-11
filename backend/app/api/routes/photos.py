@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_env_id
 from app.core.config import get_settings
 from app.db.base import get_db
 from app.schemas.photo import (
@@ -25,7 +26,14 @@ settings = get_settings()
 router = APIRouter()
 
 
-def _service(db: Session = Depends(get_db)) -> PhotoService:
+def _service(
+    db: Session = Depends(get_db), env_id: int = Depends(get_env_id)
+) -> PhotoService:
+    return PhotoService(db, env_id)
+
+
+def _unscoped_service(db: Session = Depends(get_db)) -> PhotoService:
+    """環境ヘッダを送れない <img> 直リンク（raw/crop）用。ID直指定のみ。"""
     return PhotoService(db)
 
 
@@ -213,7 +221,7 @@ def reprocess_photo(photo_id: int, svc: PhotoService = Depends(_service)):
 
 
 @router.get("/{photo_id}/raw")
-def get_photo_raw(photo_id: int, svc: PhotoService = Depends(_service)):
+def get_photo_raw(photo_id: int, svc: PhotoService = Depends(_unscoped_service)):
     """写真の実体画像を返す。"""
     photo = svc.get(photo_id)
     if photo is None:
@@ -225,7 +233,7 @@ def get_photo_raw(photo_id: int, svc: PhotoService = Depends(_service)):
 
 
 @router.get("/{photo_id}/faces/{link_id}/crop")
-def get_face_crop(photo_id: int, link_id: int, svc: PhotoService = Depends(_service)):
+def get_face_crop(photo_id: int, link_id: int, svc: PhotoService = Depends(_unscoped_service)):
     """検出顔の切り抜き（bbox + 余白）を返す。確認キューの表示用。"""
     from io import BytesIO
 

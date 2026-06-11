@@ -17,7 +17,7 @@ class PhotoRepository(BaseRepository[Photo]):
     model = Photo
 
     def search(self, f: PhotoFilter, *, limit: int = 100, offset: int = 0) -> list[Photo]:
-        stmt = select(Photo)
+        stmt = self._scoped(select(Photo))
         if f.person_id is not None:
             stmt = stmt.where(
                 exists().where(

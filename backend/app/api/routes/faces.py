@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFil
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_env_id
 from app.db.base import get_db
 from app.face.registry import get_index
 from app.models.photo_person import PhotoPerson
@@ -21,8 +22,10 @@ from app.services.face_service import FaceService
 router = APIRouter()
 
 
-def _face_service(db: Session = Depends(get_db)) -> FaceService:
-    return FaceService(db, get_index())
+def _face_service(
+    db: Session = Depends(get_db), env_id: int = Depends(get_env_id)
+) -> FaceService:
+    return FaceService(db, get_index(env_id=env_id), env_id=env_id)
 
 
 @router.post("/faces/reindex", response_model=ReindexResponse)
@@ -107,7 +110,7 @@ async def register_person_face(
 
     from app.services.photo_service import PhotoService
 
-    photo = PhotoService(svc.db).store_image(
+    photo = PhotoService(svc.db, svc.env_id).store_image(
         content=content,
         filename=file.filename or "reference.jpg",
         memo=f"参照顔登録 (person #{person_id})",
