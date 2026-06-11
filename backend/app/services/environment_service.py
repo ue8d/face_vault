@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models.api_query import ApiQuery
 from app.models.associations import event_persons, person_tags
+from app.models.collect_source import CollectSource
+from app.models.collected_url import CollectedUrl
 from app.models.cooccurrence import PersonCooccurrence
 from app.models.environment import DEFAULT_ENVIRONMENT_NAME, Environment
 from app.models.event import Event
@@ -151,6 +153,8 @@ class EnvironmentService:
         )
         self.db.execute(delete(person_tags).where(person_tags.c.person_id.in_(person_ids)))
         self.db.execute(delete(event_persons).where(event_persons.c.person_id.in_(person_ids)))
+        self.db.execute(delete(CollectedUrl).where(CollectedUrl.environment_id == env_id))
+        self.db.execute(delete(CollectSource).where(CollectSource.environment_id == env_id))
         self.db.execute(delete(ApiQuery).where(ApiQuery.environment_id == env_id))
         self.db.execute(delete(Photo).where(Photo.environment_id == env_id))
         self.db.execute(delete(Person).where(Person.environment_id == env_id))

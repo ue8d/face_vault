@@ -219,6 +219,7 @@ class PhotoService:
         event_id: int | None = None,
         taken_at: datetime | None = None,
         include_filename_in_memo: bool = False,
+        auto_enroll: bool | None = None,
     ) -> Photo:
         self.storage.mkdir(parents=True, exist_ok=True)
         ext = Path(filename).suffix or ".jpg"
@@ -239,7 +240,7 @@ class PhotoService:
         # 顔検出→Embedding→照合→photo_persons登録（best-effort・別トランザクション）。
         # ランタイム未導入・モデルDL失敗・デコード不能等でもアップロード自体は成功済み。
         try:
-            self._face_service().process_photo(photo, content)
+            self._face_service().process_photo(photo, content, auto_enroll=auto_enroll)
             self.db.commit()
         except Exception:  # noqa: BLE001 - 顔処理は付随処理。失敗してもメタ登録は維持
             self.db.rollback()
@@ -256,6 +257,7 @@ class PhotoService:
         event_id: int | None = None,
         taken_at: datetime | None = None,
         include_filename_in_memo: bool = False,
+        auto_enroll: bool | None = None,
     ) -> Photo:
         content, filename = _download_image_from_url(url)
         return self.save_upload(
@@ -265,4 +267,5 @@ class PhotoService:
             event_id=event_id,
             taken_at=taken_at,
             include_filename_in_memo=include_filename_in_memo,
+            auto_enroll=auto_enroll,
         )

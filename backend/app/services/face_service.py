@@ -448,14 +448,19 @@ class FaceService:
         self.db.commit()
         return link
 
-    def process_photo(self, photo: Photo, image_bytes: bytes) -> list[PhotoPerson]:
-        """画像から検出 → 照合 → 登録。検出器が必要。"""
+    def process_photo(
+        self, photo: Photo, image_bytes: bytes, *, auto_enroll: bool | None = None
+    ) -> list[PhotoPerson]:
+        """画像から検出 → 照合 → 登録。検出器が必要。
+
+        auto_enroll: None=設定値依存 / False=未照合のまま確認キュー / True=新規人物自動作成。
+        """
         if self._detector is None:
             from app.face.detector import get_detector
 
             self._detector = get_detector()
         faces = self._detector.detect(image_bytes)
-        return self.process_detections(photo, faces)
+        return self.process_detections(photo, faces, auto_enroll=auto_enroll)
 
     def reprocess_photo(self, photo: Photo, image_bytes: bytes) -> list[PhotoPerson]:
         """既存の検出顔リンクを置き換えて、この写真を再度顔認識する。"""
