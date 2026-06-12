@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_env_id
 from app.db.base import get_db
 from app.face.registry import get_index
+from app.models.person import Person
 from app.models.photo_person import PhotoPerson
 from app.schemas.face import (
     CandidateOut,
@@ -28,6 +28,26 @@ def _face_service(
     return FaceService(db, get_index(env_id=env_id), env_id=env_id)
 
 
+def _get_person_scoped(svc: FaceService, person_id: int) -> Person:
+    """環境内の人物を取得。存在しない/他環境なら404（FK違反500・環境間ベクトル汚染を防ぐ）。"""
+    person = svc.db.get(Person, person_id)
+    if person is None or (
+        svc.env_id is not None and person.environment_id != svc.env_id
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "person not found")
+    return person
+
+
+def _get_link_scoped(svc: FaceService, link_id: int) -> PhotoPerson:
+    """環境内の検出顔リンクを取得。写真の環境が異なる場合も404。"""
+    link = svc.db.get(PhotoPerson, link_id)
+    if link is None or (
+        svc.env_id is not None and link.photo.environment_id != svc.env_id
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "face link not found")
+    return link
+
+
 @router.post("/faces/reindex", response_model=ReindexResponse)
 def reindex(svc: FaceService = Depends(_face_service)):
     size = svc.rebuild_index()
@@ -40,7 +60,7 @@ def backfill_face01(
     svc: FaceService = Depends(_face_service),
 ):
     try:
-        result = FaceBackfillService(svc.db).backfill_face01(limit=limit)
+        result = FaceBackfillService(svc.db, env_id=svc.env_id).backfill_face01(limit=limit)
         svc.db.commit()
         if result.person_embeddings_created:
             svc.rebuild_index()
@@ -59,9 +79,8 @@ def backfill_face01(
 def confirm_face(
     link_id: int, req: ConfirmFaceRequest, svc: FaceService = Depends(_face_service)
 ):
-    link = svc.db.get(PhotoPerson, link_id)
-    if link is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "face link not found")
+    link = _get_link_scoped(svc, link_id)
+    _get_person_scoped(svc, req.person_id)
     try:
         return svc.confirm_face(link, req.person_id)
     except ValueError as e:
@@ -70,23 +89,8 @@ def confirm_face(
 
 @router.delete("/faces/links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_face_link(link_id: int, svc: FaceService = Depends(_face_service)) -> Response:
-    link = svc.db.get(PhotoPerson, link_id)
-    if link is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "face link not found")
-    if link.person_id is not None:
-        from app.services.cooccurrence_service import CooccurrenceService
-
-        others = svc.db.execute(
-            select(PhotoPerson.person_id).where(
-                PhotoPerson.photo_id == link.photo_id,
-                PhotoPerson.person_id.isnot(None),
-                PhotoPerson.id != link.id,
-            )
-        ).scalars().all()
-        for other in set(others):
-            CooccurrenceService(svc.db).bump_pairs([link.person_id, other], delta=-1)
-    svc.db.delete(link)
-    svc.db.commit()
+    link = _get_link_scoped(svc, link_id)
+    svc.delete_link(link)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -96,6 +100,7 @@ async def register_person_face(
     file: UploadFile = File(...),
     svc: FaceService = Depends(_face_service),
 ):
+    _get_person_scoped(svc, person_id)
     content = await file.read()
     try:
         from app.face.detector import get_detector

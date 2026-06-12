@@ -448,6 +448,40 @@ class FaceService:
         self.db.commit()
         return link
 
+    # --- 検出顔リンク削除（誤検出/誤確定の取り消し） ---
+    def delete_link(self, link: PhotoPerson) -> None:
+        """検出顔リンクを削除。確定済みなら共起を減算し、
+        この写真からこの人物へ登録された参照ベクトルも除去する（誤確定の汚染防止）。"""
+        removed_embeddings = False
+        if link.person_id is not None:
+            others = self.db.execute(
+                select(PhotoPerson.person_id).where(
+                    PhotoPerson.photo_id == link.photo_id,
+                    PhotoPerson.person_id.isnot(None),
+                    PhotoPerson.id != link.id,
+                )
+            ).scalars().all()
+            cooc = CooccurrenceService(self.db)
+            for other in set(others):
+                cooc.bump_pairs([link.person_id, other], delta=-1)
+            emb_ids = list(
+                self.db.scalars(
+                    select(PersonEmbedding.id).where(
+                        PersonEmbedding.person_id == link.person_id,
+                        PersonEmbedding.source_photo_id == link.photo_id,
+                    )
+                )
+            )
+            if emb_ids:
+                self.db.execute(
+                    delete(PersonEmbedding).where(PersonEmbedding.id.in_(emb_ids))
+                )
+                removed_embeddings = True
+        self.db.delete(link)
+        self.db.commit()
+        if removed_embeddings:  # ベクトルが減ったので索引再構築
+            self.rebuild_index()
+
     def process_photo(
         self, photo: Photo, image_bytes: bytes, *, auto_enroll: bool | None = None
     ) -> list[PhotoPerson]:

@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Generator
 from datetime import datetime
 
-from sqlalchemy import DateTime, create_engine, func
+from sqlalchemy import DateTime, create_engine, event, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from app.core.config import get_settings
@@ -18,6 +18,16 @@ engine = create_engine(
     connect_args={"check_same_thread": False} if _is_sqlite else {},
     future=True,
 )
+
+if _is_sqlite:
+    # SQLite は既定でFK未強制 → ondelete CASCADE/SET NULL が効かず、
+    # 人物削除時に共起/却下記録/取込キュー等の孤児行が残るため有効化
+    @event.listens_for(engine, "connect")
+    def _enable_sqlite_fk(dbapi_connection, _record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
 
 

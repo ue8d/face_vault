@@ -10,7 +10,9 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.api_query import ApiQuery
 from app.models.cooccurrence import PersonCooccurrence
+from app.models.face_import import FaceImport
 from app.models.nickname import Nickname
 from app.models.person import Person
 from app.models.person_embedding import PersonEmbedding
@@ -37,6 +39,9 @@ class PersonMergeService:
         self._merge_tags(source, target)
         self._merge_events(source, target)
         self._merge_cooccurrence(source_id, target_id)
+        self._merge_external_ids(source, target)
+        self._move_face_imports(source_id, target_id)
+        self._move_learned_api_queries(source_id, target_id)
 
         self.db.delete(source)
         self.db.commit()
@@ -93,6 +98,34 @@ class PersonMergeService:
             if e.id not in have:
                 target.events.append(e)
                 have.add(e.id)
+
+    def _merge_external_ids(self, source: Person, target: Person) -> None:
+        # CSV再取込時に source の external_id で重複人物が復活しないよう target へ移管。
+        # delete-orphan 回避のためコレクション操作で再親付け（ニックネームと同様）
+        existing = {(e.source, e.external_id) for e in target.external_ids}
+        for e in list(source.external_ids):
+            source.external_ids.remove(e)
+            if (e.source, e.external_id) not in existing:
+                target.external_ids.append(e)
+                existing.add((e.source, e.external_id))
+            # 重複は remove のみ → orphan として削除
+        self.db.flush()
+
+    def _move_face_imports(self, source_id: int, target_id: int) -> None:
+        rows = self.db.execute(
+            select(FaceImport).where(FaceImport.person_id == source_id)
+        ).scalars().all()
+        for r in rows:
+            r.person_id = target_id
+        self.db.flush()
+
+    def _move_learned_api_queries(self, source_id: int, target_id: int) -> None:
+        rows = self.db.execute(
+            select(ApiQuery).where(ApiQuery.learned_person_id == source_id)
+        ).scalars().all()
+        for r in rows:
+            r.learned_person_id = target_id
+        self.db.flush()
 
     def _merge_cooccurrence(self, source_id: int, target_id: int) -> None:
         rows = self.db.execute(

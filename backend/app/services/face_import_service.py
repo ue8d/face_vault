@@ -24,10 +24,13 @@ _TIMEOUT = 20
 
 
 def _encode_url(url: str) -> str:
-    """非ASCII（日本語ファイル名等）を含むURLを percent-encode。"""
+    """非ASCII（日本語ファイル名等）を含むURLを percent-encode。
+
+    % を safe に含め、エンコード済みURL（%20等）の二重エンコードを防ぐ。
+    """
     p = urlsplit(url.strip())
     return urlunsplit(
-        (p.scheme, p.netloc, quote(p.path), quote(p.query, safe="=&?"), p.fragment)
+        (p.scheme, p.netloc, quote(p.path, safe="/%"), quote(p.query, safe="=&?%"), p.fragment)
     )
 
 
@@ -71,6 +74,7 @@ class FaceImportService:
         photos_by_env: dict[int | None, PhotoService] = {}
         done = failed = 0
         for row in rows:
+            photo = None
             try:
                 env_id = self.db.scalar(
                     select(Person.environment_id).where(Person.id == row.person_id)
@@ -97,6 +101,14 @@ class FaceImportService:
                 row.error = None
                 done += 1
             except Exception as e:  # noqa: BLE001 - 1件失敗で全体は止めない
+                self.db.rollback()
+                if photo is not None:  # store_image はcommit済み → 登録失敗の孤児写真を掃除
+                    try:
+                        photos_by_env[env_id].delete(photo)
+                    except Exception:  # noqa: BLE001
+                        logger.warning(
+                            "orphan photo cleanup failed: %s", photo.id, exc_info=True
+                        )
                 row.status = "failed"
                 row.error = str(e)[:500]
                 failed += 1

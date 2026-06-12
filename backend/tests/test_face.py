@@ -298,6 +298,45 @@ def test_confirm_face(db: Session) -> None:
     assert cands and cands[0].person_id == alice.id
 
 
+def test_delete_link_removes_photo_sourced_embeddings(db: Session) -> None:
+    """確定済みリンクの削除で、その写真由来の本人ベクトルも除去（誤確定の汚染防止）。"""
+    from sqlalchemy import func, select
+
+    from app.models.person_embedding import PersonEmbedding
+
+    alice = _mk_person(db, "Alice")
+    svc = FaceService(db, VectorIndex(dim=DIM), threshold=0.5)
+    photo = Photo(path="p.jpg")
+    db.add(photo)
+    db.flush()
+    link = PhotoPerson(
+        photo_id=photo.id, person_id=None, embedding=_unit(5).astype("<f4").tobytes()
+    )
+    db.add(link)
+    db.flush()
+    svc.confirm_face(link, alice.id)  # source_photo_id=photo.id でベクトル登録
+    assert (
+        db.scalar(
+            select(func.count(PersonEmbedding.id)).where(
+                PersonEmbedding.person_id == alice.id
+            )
+        )
+        == 1
+    )
+
+    svc.delete_link(link)
+
+    assert (
+        db.scalar(
+            select(func.count(PersonEmbedding.id)).where(
+                PersonEmbedding.person_id == alice.id
+            )
+        )
+        == 0
+    )
+    assert svc.match(_unit(5), k=1) == []  # index からも消えている
+
+
 def test_match_uses_model_specific_margin(db: Session) -> None:
     alice = _mk_person(db, "Alice")
     bob = _mk_person(db, "Bob")

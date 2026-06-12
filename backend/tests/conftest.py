@@ -39,6 +39,10 @@ def db() -> Iterator["object"]:
     reset_embedders()
     Base.metadata.create_all(bind=engine)
     session = SessionLocal()
+    # SQLiteでもFKを強制するため、デフォルト環境(id=1)を本番同様に用意
+    from app.services.environment_service import ensure_default_environment
+
+    ensure_default_environment(session)
     try:
         yield session
     finally:

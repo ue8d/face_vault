@@ -48,10 +48,13 @@ def _exif_taken_at(content: bytes) -> datetime | None:
 
 
 def _encode_url(url: str) -> str:
-    """非ASCIIを含むURLのpath/queryをHTTP取得用にpercent-encodeする。"""
+    """非ASCIIを含むURLのpath/queryをHTTP取得用にpercent-encodeする。
+
+    % を safe に含め、エンコード済みURL（%20等）の二重エンコードを防ぐ。
+    """
     p = urlsplit(url.strip())
     return urlunsplit(
-        (p.scheme, p.netloc, quote(p.path), quote(p.query, safe="=&?"), p.fragment)
+        (p.scheme, p.netloc, quote(p.path, safe="/%"), quote(p.query, safe="=&?%"), p.fragment)
     )
 
 
