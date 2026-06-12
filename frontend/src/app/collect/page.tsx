@@ -15,6 +15,14 @@ const MODE_LABEL: Record<CrawlMode, string> = {
   domain: "ドメイン巡回",
 };
 
+/** スキーム未指定なら https:// を補う（追加時の取りこぼし防止）。 */
+function normalizeUrl(url: string): string {
+  const u = url.trim();
+  if (!u) return u;
+  if (/^https?:\/\//i.test(u)) return u;
+  return `https://${u}`;
+}
+
 const EMPTY: CollectSourceInput = {
   name: "",
   start_url: "",
@@ -53,7 +61,11 @@ export default function CollectPage() {
     setBusy("new");
     setMsg(null);
     try {
-      await api.createCollectSource(creating);
+      await api.createCollectSource({
+        ...creating,
+        name: creating.name.trim(),
+        start_url: normalizeUrl(creating.start_url),
+      });
       setCreating(EMPTY);
       setMsg("収集元を追加しました");
       await load();
@@ -69,8 +81,8 @@ export default function CollectPage() {
     setMsg(null);
     try {
       await api.updateCollectSource(s.id, {
-        name: s.name,
-        start_url: s.start_url,
+        name: s.name.trim(),
+        start_url: normalizeUrl(s.start_url),
         crawl_mode: s.crawl_mode,
         max_pages: s.max_pages,
         max_images: s.max_images,
