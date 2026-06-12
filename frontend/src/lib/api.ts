@@ -40,6 +40,29 @@ export function setCurrentEnvId(id: number | null) {
   else window.localStorage.setItem(ENV_STORAGE_KEY, String(id));
 }
 
+/** FastAPI のエラー detail を読める文字列にする。
+ * 422 は detail が [{loc, msg, type}, ...] の配列で来るため、msg を結合する。 */
+function formatDetail(detail: unknown): string | undefined {
+  if (detail == null) return undefined;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail.map((d) => {
+      if (d && typeof d === "object") {
+        const o = d as { loc?: unknown[]; msg?: string };
+        const field = Array.isArray(o.loc) ? o.loc[o.loc.length - 1] : undefined;
+        return field ? `${field}: ${o.msg ?? ""}` : o.msg ?? JSON.stringify(d);
+      }
+      return String(d);
+    });
+    return msgs.join(" / ");
+  }
+  if (typeof detail === "object") {
+    const o = detail as { msg?: string };
+    return o.msg ?? JSON.stringify(detail);
+  }
+  return String(detail);
+}
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const envId = getCurrentEnvId();
   const res = await fetch(`${API_BASE}${path}`, {
@@ -54,10 +77,10 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     cache: "no-store",
   });
   if (!res.ok) {
-    let detail = res.statusText;
+    let detail: string = res.statusText;
     try {
       const j = await res.json();
-      detail = j.detail ?? detail;
+      detail = formatDetail(j.detail) ?? detail;
     } catch {
       /* ignore */
     }
