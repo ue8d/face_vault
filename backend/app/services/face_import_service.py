@@ -6,6 +6,7 @@ CSV取込(大量)を非同期化するため、取込はキュー登録のみ。
 from __future__ import annotations
 
 import logging
+import re
 import urllib.request
 from urllib.parse import quote, urlsplit, urlunsplit
 
@@ -23,12 +24,19 @@ _MAX_BYTES = 20 * 1024 * 1024  # 20MB
 _TIMEOUT = 20
 
 
+_INVALID_PCT = re.compile(r"%(?![0-9A-Fa-f]{2})")
+
+
 def _encode_url(url: str) -> str:
-    """非ASCII（日本語ファイル名等）を含むURLを percent-encode。"""
+    """非ASCII（日本語ファイル名等）を含むURLを percent-encode。
+
+    有効な %HH エスケープのみ safe 扱いで二重エンコードを防ぎ、
+    リテラルの % （例: "100% organic.jpg"）は %25 へエンコードする。
+    """
     p = urlsplit(url.strip())
-    return urlunsplit(
-        (p.scheme, p.netloc, quote(p.path), quote(p.query, safe="=&?"), p.fragment)
-    )
+    path = quote(_INVALID_PCT.sub("%25", p.path), safe="/%")
+    query = quote(_INVALID_PCT.sub("%25", p.query), safe="=&?%")
+    return urlunsplit((p.scheme, p.netloc, path, query, p.fragment))
 
 
 def _download(url: str) -> bytes:
@@ -71,6 +79,7 @@ class FaceImportService:
         photos_by_env: dict[int | None, PhotoService] = {}
         done = failed = 0
         for row in rows:
+            photo = None
             try:
                 env_id = self.db.scalar(
                     select(Person.environment_id).where(Person.id == row.person_id)
@@ -97,6 +106,14 @@ class FaceImportService:
                 row.error = None
                 done += 1
             except Exception as e:  # noqa: BLE001 - 1件失敗で全体は止めない
+                self.db.rollback()
+                if photo is not None:  # store_image はcommit済み → 登録失敗の孤児写真を掃除
+                    try:
+                        photos_by_env[env_id].delete(photo)
+                    except Exception:  # noqa: BLE001
+                        logger.warning(
+                            "orphan photo cleanup failed: %s", photo.id, exc_info=True
+                        )
                 row.status = "failed"
                 row.error = str(e)[:500]
                 failed += 1

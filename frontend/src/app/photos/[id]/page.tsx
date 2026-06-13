@@ -118,8 +118,12 @@ export default function PhotoDetail() {
   };
 
   const createAndConfirm = async (linkId: number, name: string) => {
-    const created = await api.createPerson({ name });
-    await confirm(linkId, created.id);
+    try {
+      const created = await api.createPerson({ name });
+      await confirm(linkId, created.id);
+    } catch (e) {
+      alert(`作成失敗: ${(e as Error).message}`);
+    }
   };
 
   const deletePhoto = async () => {

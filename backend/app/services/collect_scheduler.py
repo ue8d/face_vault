@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 _POLL_INTERVAL_SEC = 30
 
 
+def _as_utc(value: datetime | None) -> datetime | None:
+    """SQLite の DateTime は naive で返るため、aware な now と比較できるよう UTC 扱いに正規化。"""
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
 def due_sources(
     sources: list[CollectSource], now: datetime
 ) -> list[CollectSource]:
@@ -26,7 +33,8 @@ def due_sources(
     for s in sources:
         if not s.enabled or not s.interval_minutes or s.interval_minutes < 1:
             continue
-        if s.next_run_at is None or s.next_run_at <= now:
+        next_run = _as_utc(s.next_run_at)
+        if next_run is None or next_run <= now:
             out.append(s)
     return out
 

@@ -34,10 +34,13 @@ class FaceBackfillService:
         *,
         embedder=None,
         storage_dir: str | Path | None = None,
+        env_id: int | None = None,
     ) -> None:
         self.db = db
         self.embedder = embedder
         self.storage = Path(storage_dir or get_settings().photo_storage_dir)
+        # 環境スコープ。None=全環境（呼び出し側で環境別 index 再構築の責任を負う）
+        self.env_id = env_id
 
     def _get_embedder(self):
         if self.embedder is not None:
@@ -105,6 +108,8 @@ class FaceBackfillService:
             .join(Photo, PhotoPerson.photo_id == Photo.id)
             .order_by(PhotoPerson.id)
         )
+        if self.env_id is not None:
+            stmt = stmt.where(Photo.environment_id == self.env_id)
         if limit is not None:
             stmt = stmt.limit(limit)
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 import io
 import logging
 import mimetypes
+import re
 import urllib.request
 import uuid
 from datetime import datetime, timezone
@@ -47,12 +48,19 @@ def _exif_taken_at(content: bytes) -> datetime | None:
         return None
 
 
+_INVALID_PCT = re.compile(r"%(?![0-9A-Fa-f]{2})")
+
+
 def _encode_url(url: str) -> str:
-    """非ASCIIを含むURLのpath/queryをHTTP取得用にpercent-encodeする。"""
+    """非ASCIIを含むURLのpath/queryをHTTP取得用にpercent-encodeする。
+
+    有効な %HH エスケープのみ safe 扱いで二重エンコードを防ぎ、
+    リテラルの % （例: "100% organic.jpg"）は %25 へエンコードする。
+    """
     p = urlsplit(url.strip())
-    return urlunsplit(
-        (p.scheme, p.netloc, quote(p.path), quote(p.query, safe="=&?"), p.fragment)
-    )
+    path = quote(_INVALID_PCT.sub("%25", p.path), safe="/%")
+    query = quote(_INVALID_PCT.sub("%25", p.query), safe="=&?%")
+    return urlunsplit((p.scheme, p.netloc, path, query, p.fragment))
 
 
 def _download_image_from_url(url: str) -> tuple[bytes, str]:

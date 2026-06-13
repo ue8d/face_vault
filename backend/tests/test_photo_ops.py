@@ -147,3 +147,23 @@ def test_import_enqueues_face_for_img_url(client: TestClient) -> None:
     # キューに1件入っている（背景処理の成否に依らず合計1）
     st = client.get("/persons/import/face-status").json()
     assert st["pending"] + st["done"] + st["failed"] == 1
+
+
+def test_encode_url_keeps_existing_percent_escapes() -> None:
+    """エンコード済みURLを二重エンコードしない（%20 → %2520 を防ぐ）。"""
+    from app.services.photo_service import _encode_url
+
+    assert (
+        _encode_url("https://ex.com/a%20b.jpg?x=1%262")
+        == "https://ex.com/a%20b.jpg?x=1%262"
+    )
+    # 非ASCIIは従来どおりエンコードされる
+    assert _encode_url("https://ex.com/画像.jpg") == (
+        "https://ex.com/%E7%94%BB%E5%83%8F.jpg"
+    )
+
+
+def test_face_import_encode_url_keeps_existing_percent_escapes() -> None:
+    from app.services.face_import_service import _encode_url
+
+    assert _encode_url("https://ex.com/a%20b.jpg") == "https://ex.com/a%20b.jpg"

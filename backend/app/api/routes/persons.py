@@ -197,11 +197,16 @@ class MergeRequest(BaseModel):
 
 
 @router.post("/{person_id}/merge", response_model=PersonOut)
-def merge_person(person_id: int, req: MergeRequest, db: Session = Depends(get_db)):
+def merge_person(person_id: int, req: MergeRequest, svc: PersonService = Depends(_service)):
     """source_id の人物を person_id（target）へ統合。
 
     誤検出/自動登録の重複を本人に吸収。ベクトルも移管され照合精度が向上。
     """
+    # target は呼び出し環境内に限定（merge() が source/target 同一環境を検証するため
+    # source も自動的に環境内に閉じる）
+    if svc.get(person_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "person not found")
+    db = svc.db
     try:
         return PersonMergeService(db).merge(source_id=req.source_id, target_id=person_id)
     except ValueError as e:

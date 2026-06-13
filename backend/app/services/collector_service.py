@@ -267,4 +267,6 @@ class CollectorService:
         if self.env_id is not None:
             row.environment_id = self.env_id
         self.db.add(row)
-        self.db.flush()
+        # 即commit: 後続URLの保存失敗時 rollback で記録が消えると、
+        # 写真だけ残って次回巡回が同じ画像を重複保存するため
+        self.db.commit()

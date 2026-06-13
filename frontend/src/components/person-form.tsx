@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { Person } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,17 @@ export function PersonFormDialog({
   const [tags, setTags] = useState((initial?.tags ?? []).map((t) => t.name).join(", "));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // 開くたびに initial から再初期化（前回入力の残留・initial 更新の取りこぼし防止）
+  useEffect(() => {
+    if (!open) return;
+    setName(initial?.name ?? "");
+    setNicknames((initial?.nicknames ?? []).join(", "));
+    setRelation(initial?.relation ?? "");
+    setMemo(initial?.memo ?? "");
+    setTags((initial?.tags ?? []).map((t) => t.name).join(", "));
+    setErr(null);
+  }, [open, initial]);
 
   const submit = async () => {
     if (!name.trim()) return;

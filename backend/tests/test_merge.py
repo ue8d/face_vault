@@ -93,3 +93,44 @@ def test_merge_dedupes_photo_links_and_cooccurrence(db: Session) -> None:
         )
     )
     assert pair is not None and pair.count == 1
+
+
+def test_merge_moves_external_ids_and_face_imports(db: Session) -> None:
+    """external_id/取込キューを target へ移管 → CSV再取込で重複人物が復活しない。"""
+    from app.models.face_import import FaceImport
+    from app.models.person_external_id import PersonExternalId
+
+    real = Person(name="本人")
+    dup = Person(name="重複")
+    db.add_all([real, dup])
+    db.flush()
+    db.add(
+        PersonExternalId(person_id=dup.id, source="friends_csv", external_id="ext-1")
+    )
+    db.add(FaceImport(person_id=dup.id, img_url="https://x/face.jpg", status="pending"))
+    db.commit()
+
+    PersonMergeService(db).merge(source_id=dup.id, target_id=real.id)
+
+    ext = db.scalar(
+        select(PersonExternalId).where(PersonExternalId.external_id == "ext-1")
+    )
+    assert ext is not None and ext.person_id == real.id
+    imp = db.scalar(select(FaceImport).where(FaceImport.img_url == "https://x/face.jpg"))
+    assert imp is not None and imp.person_id == real.id
+
+
+def test_person_delete_cascades_cooccurrence(db: Session) -> None:
+    """SQLiteでもFK有効 → 人物削除で共起行が孤児として残らない。"""
+    a = Person(name="A")
+    b = Person(name="B")
+    db.add_all([a, b])
+    db.flush()
+    CooccurrenceService(db).bump_pairs([a.id, b.id])
+    db.commit()
+
+    from app.services.person_service import PersonService
+
+    PersonService(db).delete(db.get(Person, b.id))
+
+    assert db.scalar(select(func.count(PersonCooccurrence.id))) == 0

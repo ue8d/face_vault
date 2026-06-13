@@ -151,3 +151,31 @@ def test_update_and_delete_person(client: TestClient) -> None:
 
     assert client.delete(f"/persons/{pid}").status_code == 204
     assert client.get(f"/persons/{pid}").status_code == 404
+
+
+def test_confirm_face_unknown_person_returns_404(client: TestClient) -> None:
+    """存在しない人物IDでの顔確定はFK違反500ではなく404。"""
+    from app.db.base import SessionLocal
+    from app.models.photo import Photo
+    from app.models.photo_person import PhotoPerson
+
+    db = SessionLocal()
+    try:
+        photo = Photo(path="x.jpg")
+        db.add(photo)
+        db.flush()
+        link = PhotoPerson(photo_id=photo.id, person_id=None, bbox="0,0,10,10")
+        db.add(link)
+        db.commit()
+        link_id = link.id
+    finally:
+        db.close()
+
+    r = client.patch(f"/faces/links/{link_id}", json={"person_id": 999999})
+    assert r.status_code == 404
+
+
+def test_register_person_face_unknown_person_returns_404(client: TestClient) -> None:
+    files = {"file": ("f.jpg", io.BytesIO(b"x"), "image/jpeg")}
+    r = client.post("/persons/999999/faces", files=files)
+    assert r.status_code == 404

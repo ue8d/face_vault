@@ -178,6 +178,12 @@ class ApiQueryService:
 
     def get(self, query_id: int) -> ApiQuery | None:
         row = self.db.get(ApiQuery, query_id)
+        if (
+            row is not None
+            and self.env_id is not None
+            and row.environment_id != self.env_id
+        ):
+            return None  # 他環境のログは不可視（raw/crop 直リンクは unscoped サービス経由）
         if row is not None:
             self._attach_learned_name(row)
         return row

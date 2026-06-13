@@ -83,12 +83,21 @@ export default function ReviewPage() {
 
   const removeFace = async (item: ReviewItem) => {
     if (!window.confirm("この顔を対象外にして削除しますか？（誤検出・重複時）")) return;
-    await api.deleteFaceLink(item.link_id);
-    setItems((xs) => xs.filter((x) => x.link_id !== item.link_id));
+    try {
+      await api.deleteFaceLink(item.link_id);
+      setItems((xs) => xs.filter((x) => x.link_id !== item.link_id));
+    } catch (e) {
+      alert(`削除失敗: ${(e as Error).message}`);
+    }
   };
 
   const doMerge = async (s: MergeSuggestion) => {
-    await api.mergePerson(s.person_a_id, s.person_b_id); // b を a に統合
+    try {
+      await api.mergePerson(s.person_a_id, s.person_b_id); // b を a に統合
+    } catch (e) {
+      alert(`統合失敗: ${(e as Error).message}`);
+      return;
+    }
     setSuggestions((xs) =>
       xs.filter((x) => !(x.person_a_id === s.person_a_id && x.person_b_id === s.person_b_id)),
     );
@@ -97,10 +106,14 @@ export default function ReviewPage() {
   };
 
   const dismiss = async (s: MergeSuggestion) => {
-    await api.dismissMerge(s.person_a_id, s.person_b_id);
-    setSuggestions((xs) =>
-      xs.filter((x) => !(x.person_a_id === s.person_a_id && x.person_b_id === s.person_b_id)),
-    );
+    try {
+      await api.dismissMerge(s.person_a_id, s.person_b_id);
+      setSuggestions((xs) =>
+        xs.filter((x) => !(x.person_a_id === s.person_a_id && x.person_b_id === s.person_b_id)),
+      );
+    } catch (e) {
+      alert(`却下失敗: ${(e as Error).message}`);
+    }
   };
 
   return (
