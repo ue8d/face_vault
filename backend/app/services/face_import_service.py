@@ -6,6 +6,7 @@ CSV取込(大量)を非同期化するため、取込はキュー登録のみ。
 from __future__ import annotations
 
 import logging
+import re
 import urllib.request
 from urllib.parse import quote, urlsplit, urlunsplit
 
@@ -23,15 +24,19 @@ _MAX_BYTES = 20 * 1024 * 1024  # 20MB
 _TIMEOUT = 20
 
 
+_INVALID_PCT = re.compile(r"%(?![0-9A-Fa-f]{2})")
+
+
 def _encode_url(url: str) -> str:
     """非ASCII（日本語ファイル名等）を含むURLを percent-encode。
 
-    % を safe に含め、エンコード済みURL（%20等）の二重エンコードを防ぐ。
+    有効な %HH エスケープのみ safe 扱いで二重エンコードを防ぎ、
+    リテラルの % （例: "100% organic.jpg"）は %25 へエンコードする。
     """
     p = urlsplit(url.strip())
-    return urlunsplit(
-        (p.scheme, p.netloc, quote(p.path, safe="/%"), quote(p.query, safe="=&?%"), p.fragment)
-    )
+    path = quote(_INVALID_PCT.sub("%25", p.path), safe="/%")
+    query = quote(_INVALID_PCT.sub("%25", p.query), safe="=&?%")
+    return urlunsplit((p.scheme, p.netloc, path, query, p.fragment))
 
 
 def _download(url: str) -> bytes:
