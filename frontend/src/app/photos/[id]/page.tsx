@@ -126,6 +126,16 @@ export default function PhotoDetail() {
     }
   };
 
+  const excludeFace = async (linkId: number) => {
+    if (!window.confirm("この顔を対象外にしますか？（誤検出時）")) return;
+    try {
+      await api.deleteFaceLink(linkId);
+      load();
+    } catch (e) {
+      alert(`対象外にできませんでした: ${(e as Error).message}`);
+    }
+  };
+
   const deletePhoto = async () => {
     if (!window.confirm("この写真を削除しますか？\n顔の紐付け・この画像から登録した参照ベクトルも削除されます。")) return;
     try {
@@ -346,6 +356,14 @@ export default function PhotoDetail() {
                     onPick={(personId) => confirm(link.id, personId)}
                     onCreate={(name) => createAndConfirm(link.id, name)}
                   />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => excludeFace(link.id)}
+                    title="誤検出として対象外にする"
+                  >
+                    <X className="h-4 w-4" /> 対象外
+                  </Button>
                 </div>
               ))}
             </CardContent>

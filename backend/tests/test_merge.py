@@ -53,7 +53,9 @@ def test_merge_moves_embeddings_and_resolves_to_target(db: Session) -> None:
     assert "重複ニック" in [nk.name for nk in target.nicknames]
 
 
-def test_merge_dedupes_photo_links_and_cooccurrence(db: Session) -> None:
+def test_merge_keeps_duplicate_photo_links_and_updates_cooccurrence(db: Session) -> None:
+    """target が既に写る写真でも source側リンクは削除せず両方残す
+    （1枚の写真に同一人物が複数回映るケースを許容するため）。"""
     a = Person(name="A")
     b = Person(name="B")
     dup = Person(name="dup")
@@ -79,11 +81,11 @@ def test_merge_dedupes_photo_links_and_cooccurrence(db: Session) -> None:
 
     PersonMergeService(db).merge(source_id=dup.id, target_id=a.id)
 
-    # p1 は a に既存 → dup側リンク削除（重複回避）。p2 は a へ移管
-    a_photos = set(
-        db.execute(select(PhotoPerson.photo_id).where(PhotoPerson.person_id == a.id)).scalars()
-    )
-    assert a_photos == {p1.id, p2.id}
+    # p1 は a のリンクが2件（元々のaリンク + dup→a付替）、p2 も a へ移管
+    a_links = db.execute(
+        select(PhotoPerson.photo_id).where(PhotoPerson.person_id == a.id)
+    ).scalars().all()
+    assert sorted(a_links) == sorted([p1.id, p1.id, p2.id])
     assert db.get(Person, dup.id) is None
     # 共起: a-dup は自己ペア化で消滅、b-dup → b-a に付替
     pair = db.scalar(

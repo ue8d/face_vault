@@ -2,12 +2,15 @@
 
 埋め込みは face_embeddings 子テーブル（モデル別）に保持。
 .embedding プロパティは insightface 埋め込みの後方互換読み取り用。
+
+同一写真に同一人物が複数回映るケース（集合写真での複数回登場等）に対応するため、
+(photo_id, person_id) の一意制約は設けない。1行=1検出顔（bboxで区別）。
 """
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Float, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Float, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin
@@ -21,7 +24,6 @@ if TYPE_CHECKING:
 
 class PhotoPerson(Base, TimestampMixin):
     __tablename__ = "photo_persons"
-    __table_args__ = (UniqueConstraint("photo_id", "person_id", name="uq_photo_person"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     photo_id: Mapped[int] = mapped_column(

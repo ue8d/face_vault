@@ -109,6 +109,42 @@ def test_process_detections_assigns_and_cooccurs(db: Session) -> None:
     assert comp and comp[0] == (bob.id, 1)
 
 
+def test_process_detections_allows_same_person_twice_in_one_photo(db: Session) -> None:
+    """1枚の写真に同一人物が複数回映る場合、両方の検出顔をその人物へ紐付ける。"""
+    alice = _mk_person(db, "Alice")
+    va = _unit(10)
+    svc = FaceService(db, VectorIndex(dim=DIM), threshold=0.5)
+    svc.register_embedding(alice.id, va)
+
+    photo = Photo(path="p.jpg")
+    db.add(photo)
+    db.flush()
+    # 同一人物の顔が2つ検出されたケース（集合写真での重複登場等）
+    svc._detector = FakeDetector([va, va])
+    links = svc.process_photo(photo, b"img")
+
+    assert len(links) == 2
+    assert [link.person_id for link in links] == [alice.id, alice.id]
+
+
+def test_confirm_face_allows_same_person_twice_in_one_photo(db: Session) -> None:
+    alice = _mk_person(db, "Alice")
+    svc = FaceService(db, VectorIndex(dim=DIM), threshold=0.99)
+    photo = Photo(path="p.jpg")
+    db.add(photo)
+    db.flush()
+    link1 = PhotoPerson(photo_id=photo.id, person_id=None, bbox="0,0,10,10")
+    link2 = PhotoPerson(photo_id=photo.id, person_id=None, bbox="20,0,10,10")
+    db.add_all([link1, link2])
+    db.flush()
+
+    svc.confirm_face(link1, alice.id)
+    svc.confirm_face(link2, alice.id)
+
+    assert link1.person_id == alice.id
+    assert link2.person_id == alice.id
+
+
 def test_online_learning_adds_high_confidence_match(db: Session) -> None:
     from sqlalchemy import func, select
 

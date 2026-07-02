@@ -305,30 +305,24 @@ class FaceService:
             auto_enroll = bool(SettingsService(self.db).value("auto_enroll_faces"))
 
         links: list[PhotoPerson] = []
-        used: set[int] = set()  # 同一写真内で同一人物への重複リンク防止（uq_photo_person）
-        # 各顔の最良候補を先に算出し、margin の高い順に確定（重複時は高margin側を残す）
+        # 同一写真内に同一人物が複数回映る場合も、各検出顔(bbox)を独立にその人物へ紐付ける。
         scored = [(f, self.match(f.embeddings, k=3)) for f in faces]
-        scored.sort(key=lambda t: t[1][0].margin if t[1] else -1.0, reverse=True)
         for f, candidates in scored:
             top = candidates[0] if candidates else None
             matched = top.person_id if top and top.margin >= 0 else None
 
-            if matched is not None and matched in used:
-                matched = None  # 既に同写真で使用済み → 未照合化（自動登録もしない）
-            elif matched is None and auto_enroll and self.quality_ok(f):
+            if matched is None and auto_enroll and self.quality_ok(f):
                 # 品質ゲート通過時のみ自動登録（低品質は未照合のまま確認キューへ）
                 matched = self._auto_create_person(f, source_photo_id=photo.id)
 
-            if matched is not None:
-                used.add(matched)
-                if top is not None:
-                    self._maybe_online_learn(
-                        matched,
-                        f,
-                        top,
-                        candidates,
-                        source_photo_id=photo.id,
-                    )
+            if matched is not None and top is not None:
+                self._maybe_online_learn(
+                    matched,
+                    f,
+                    top,
+                    candidates,
+                    source_photo_id=photo.id,
+                )
 
             x, y, w, h = f.bbox
             link = PhotoPerson(
@@ -408,21 +402,14 @@ class FaceService:
 
     # --- 手動確定（候補→人物紐付け） ---
     def confirm_face(self, link: PhotoPerson, person_id: int) -> PhotoPerson:
-        """検出顔を人物に確定。その顔の全モデルEmbeddingを人物代表として登録 + 共起更新。"""
+        """検出顔を人物に確定。その顔の全モデルEmbeddingを人物代表として登録 + 共起更新。
+
+        同一写真に同一人物が複数回映る場合もあるため、既に同写真へ割当済みでも許容する。
+        """
         if link.person_id == person_id:
             link.confidence = 1.0
             self.db.commit()
             return link
-        # 同一写真に同一人物が既に割当済みなら重複(uq_photo_person)になる
-        dup = self.db.scalar(
-            select(PhotoPerson.id).where(
-                PhotoPerson.photo_id == link.photo_id,
-                PhotoPerson.person_id == person_id,
-                PhotoPerson.id != link.id,
-            )
-        )
-        if dup is not None:
-            raise ValueError("この写真には既にこの人物が割り当てられています")
         link.person_id = person_id
         link.confidence = 1.0  # 手動確定済み → 確認キューから除外
         self.db.flush()

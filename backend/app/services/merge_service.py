@@ -49,21 +49,13 @@ class PersonMergeService:
         return target
 
     def _merge_photo_links(self, source_id: int, target_id: int) -> None:
-        # target が既に写る写真は重複(unique制約)になるため source側リンク削除
-        target_photos = set(
-            self.db.execute(
-                select(PhotoPerson.photo_id).where(PhotoPerson.person_id == target_id)
-            ).scalars()
-        )
+        # 同一写真に target が既に写っていても、それぞれ別の検出顔(bbox)なので両方残す
+        # （1枚の写真に同一人物が複数回映るケースを許容するため）。
         links = self.db.execute(
             select(PhotoPerson).where(PhotoPerson.person_id == source_id)
         ).scalars().all()
         for link in links:
-            if link.photo_id in target_photos:
-                self.db.delete(link)
-            else:
-                link.person_id = target_id
-                target_photos.add(link.photo_id)
+            link.person_id = target_id
         self.db.flush()
 
     def _move_embeddings(self, source_id: int, target_id: int) -> None:
